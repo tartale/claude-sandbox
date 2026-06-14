@@ -2,6 +2,8 @@
 
 Runs [Claude Code](https://github.com/anthropics/claude-code) in a Docker container, mounting your current directory as the workspace. This gives Claude a sandboxed environment to read and modify files without touching the rest of your system.
 
+The image is published to the GitHub Container Registry as [`ghcr.io/tartale/claude-sandbox`](https://github.com/tartale/claude-sandbox/pkgs/container/claude-sandbox).
+
 Your Claude credentials (`~/.claude` and `~/.claude.json`) are bind-mounted into the container so you stay logged in.
 
 The container runs as a user matching your host UID and GID, so files written to the workspace are owned by you. Your shell's umask is also applied inside the container so new files get the expected permissions. Note that on macOS, Docker Desktop runs containers in a Linux VM, so the host umask has no effect — the default umask of the container will be used instead.
@@ -17,7 +19,11 @@ The container runs as a user matching your host UID and GID, so files written to
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)"
 ```
 
-Run this from any project directory. Claude Code will start inside a container with that directory as `/workspace`.
+Run this from any project directory. Claude Code will start inside a container with that directory as `/workspace`. The launcher pulls `ghcr.io/tartale/claude-sandbox:latest` automatically; to pre-pull it:
+
+```bash
+docker pull ghcr.io/tartale/claude-sandbox:latest
+```
 
 ### Passing arguments to Claude
 
