@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REGISTRY="${REGISTRY:-tartale/claude-sandbox}"
+REGISTRY="${REGISTRY:-ghcr.io/tartale/claude-sandbox}"
 CLAUDE_VERSION="${CLAUDE_VERSION:-$(npm view @anthropic-ai/claude-code version 2>/dev/null || echo latest)}"
 CLAUDE_MAJOR_MINOR=$(echo "$CLAUDE_VERSION" | cut -d. -f1-2)
 CLAUDE_MAJOR=$(echo "$CLAUDE_VERSION" | cut -d. -f1)

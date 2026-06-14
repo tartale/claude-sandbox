@@ -7,6 +7,9 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v6
 
@@ -16,11 +19,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Log in to Docker Hub
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get Claude version
         id: claude-version
@@ -33,8 +37,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            tartale/claude-sandbox:latest
-            tartale/claude-sandbox:${{ steps.claude-version.outputs.version }}
+            ghcr.io/tartale/claude-sandbox:latest
+            ghcr.io/tartale/claude-sandbox:${{ steps.claude-version.outputs.version }}
           build-args: CLAUDE_VERSION=${{ steps.claude-version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -45,8 +49,8 @@ jobs:
             lang=$(basename "$plugin" .sh)
             echo "Building $lang..."
             docker buildx build --platform linux/amd64,linux/arm64 --push \
-              -t tartale/claude-sandbox:$lang \
-              -t "tartale/claude-sandbox:$lang-${{ steps.claude-version.outputs.version }}" \
+              -t ghcr.io/tartale/claude-sandbox:$lang \
+              -t "ghcr.io/tartale/claude-sandbox:$lang-${{ steps.claude-version.outputs.version }}" \
               --build-arg PLUGINS=plugins/languages/$lang.sh \
               --build-arg CLAUDE_VERSION=${{ steps.claude-version.outputs.version }} \
               .

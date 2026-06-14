@@ -5,7 +5,7 @@ REPO="tartale/claude-sandbox"
 BRANCH="main"
 
 CS_IMAGE_TAG="${CS_IMAGE_TAG:-custom}"
-CS_IMAGE="tartale/claude-sandbox:${CS_IMAGE_TAG}"
+CS_IMAGE="ghcr.io/tartale/claude-sandbox:${CS_IMAGE_TAG}"
 PLUGINS="${PLUGINS:-}"
 LANGUAGE_VERSIONS="${LANGUAGE_VERSIONS:-}"
 CLAUDE_VERSION="${CLAUDE_VERSION:-$(npm view @anthropic-ai/claude-code version 2>/dev/null || echo latest)}"

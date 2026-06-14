@@ -1,6 +1,6 @@
 CS_IMAGE_TAG ?= local
-CS_IMAGE = tartale/claude-sandbox:$(CS_IMAGE_TAG)
-REGISTRY = tartale/claude-sandbox
+CS_IMAGE = ghcr.io/tartale/claude-sandbox:$(CS_IMAGE_TAG)
+REGISTRY = ghcr.io/tartale/claude-sandbox
 
 PLUGINS_STAGED = $(if $(PLUGINS),plugins/.build)
 PLUGINS_ARG = $(if $(PLUGINS),--build-arg PLUGINS=$(PLUGINS_STAGED))
@@ -30,13 +30,13 @@ pull:
 
 push: stage-plugins
 	docker buildx build --platform linux/amd64,linux/arm64 --push \
-	  -t $(CS_IMAGE) -t tartale/claude-sandbox:latest $(PLUGINS_ARG) $(LANGUAGE_VERSIONS_ARG) $(CLAUDE_VERSION_ARG) .
+	  -t $(CS_IMAGE) -t ghcr.io/tartale/claude-sandbox:latest $(PLUGINS_ARG) $(LANGUAGE_VERSIONS_ARG) $(CLAUDE_VERSION_ARG) .
 
 all: push
 	@for lang in $(LANGUAGES); do \
-		echo "Building tartale/claude-sandbox:$$lang..."; \
+		echo "Building ghcr.io/tartale/claude-sandbox:$$lang..."; \
 		docker buildx build --platform linux/amd64,linux/arm64 --push \
-		  -t tartale/claude-sandbox:$$lang \
+		  -t ghcr.io/tartale/claude-sandbox:$$lang \
 		  --build-arg PLUGINS=plugins/languages/$$lang.sh $(CLAUDE_VERSION_ARG) .; \
 	done
 
