@@ -43,7 +43,7 @@ if [ -f "$CS_ENV_FILE" ]; then
     done < <(grep -Ev '^\s*(#|$)' "$CS_ENV_FILE" | sed 's/^export //')
 fi
 
-DOCKER_FLAGS=${DOCKER_FLAGS}
+DOCKER_FLAGS=(${DOCKER_FLAGS})
 DOCKER_FLAGS+=(--rm)
 if [ -t 0 ] || [ -c /dev/tty ]; then
     DOCKER_FLAGS+=(-it)
