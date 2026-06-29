@@ -44,7 +44,6 @@ if [ -f "$CS_ENV_FILE" ]; then
 fi
 
 DOCKER_FLAGS=(${DOCKER_FLAGS})
-DOCKER_FLAGS+=(--rm)
 if [ -t 0 ] || [ -c /dev/tty ]; then
     DOCKER_FLAGS+=(-it)
 else
