@@ -50,21 +50,27 @@ else
     DOCKER_FLAGS+=(-i)
 fi
 
+CS_HOSTS="${HOME}/.claude-sandbox-hosts"
+grep -v '::1' /etc/hosts > "${CS_HOSTS}" || true   # host's real entries, minus IPv6
+chmod 644 "${CS_HOSTS}"
+
+
 DOCKER_ARGS=(
     "${DOCKER_FLAGS[@]}"
-    --platform "$PLATFORM"
+    --platform "${PLATFORM}"
     --network=host
-    --name "$CONTAINER_NAME"
+    --name "${CONTAINER_NAME}"
     "${ENV_ARGS[@]}"
     -e CUID="$(id -u)"
     -e CGID="$(id -g)"
     -e CMASK="$(umask)"
     "${PLUGINS_ARGS[@]}"
     -v "$(pwd):/workspace"
-    -v "$HOME/.claude.json:/home/claude/.claude.json"
-    -v "$HOME/.claude:/home/claude/.claude"
-    -v "$HOME/.gitconfig:/home/claude/.gitconfig:ro"
-    "$CS_IMAGE" "$@"
+    -v "${HOME}/.claude.json:/home/claude/.claude.json"
+    -v "${HOME}/.claude:/home/claude/.claude"
+    -v "${HOME}/.gitconfig:/home/claude/.gitconfig:ro"
+    -v "${CS_HOSTS}:/etc/hosts:ro"
+    "${CS_IMAGE}" "$@"
 )
 
 # When piped (e.g. curl | bash), stdin is not a TTY but /dev/tty still

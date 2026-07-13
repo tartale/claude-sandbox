@@ -31,9 +31,6 @@ chmod a+r /tmp/gitconfig
 CLAUDE_ARGS=$(printf '%q ' "$@")
 export CLAUDE_ARGS
 
-# Remove ipv6 entries for cypress/chromium
-grep -v '::1' /etc/hosts > /tmp/hosts.new && cat /tmp/hosts.new > /etc/hosts
-
 su -m -s /bin/bash claude << 'EOF'
 set -e
 export HOME=/home/claude
