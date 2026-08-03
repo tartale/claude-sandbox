@@ -95,7 +95,19 @@ Plugins are shell scripts that install additional tools into the sandbox. The `p
 | `plugins/languages/rust.sh` | Rust via rustup (`cargo`, `rustc`, `rustfmt`, `clippy`) | `rust-<version>` | `rust-1.78.0` |
 | `plugins/languages/typescript.sh` | TypeScript, `ts-node`, `tsx`, `@types/node` | `typescript-<version>` | `typescript-5.4.0` |
 
-All plugins default to the latest stable version. See [Pinning a language version](#pinning-a-language-version) for details.
+All language plugins default to the latest stable version. See [Pinning a language version](#pinning-a-language-version) for details.
+
+The `plugins/tools/` directory contains ready-made tool packs:
+
+| Plugin | Installs |
+|---|---|
+| `plugins/tools/docker.sh` | Docker CLI (client only), Buildx, and Compose plugins |
+
+Built-in plugins are resolved by name regardless of directory, so `PLUGINS=docker` and `PLUGINS=go` both work. The Docker plugin installs only the client; bind-mount the host's Docker socket so the CLI can reach the host daemon:
+
+```bash
+DOCKER_FLAGS="-v /var/run/docker.sock:/var/run/docker.sock" ./claude-sandbox.sh
+```
 
 ### Using a single plugin
 

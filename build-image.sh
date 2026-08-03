@@ -41,13 +41,16 @@ if [ -n "$PLUGINS" ]; then
         chmod +x "$BUILD_DIR/plugins/custom/plugin.sh"
         PLUGINS_ARG="plugins/custom/plugin.sh"
     else
-        # Built-in plugin name (e.g. "python3", "go")
-        if [ ! -f "$BUILD_DIR/plugins/languages/${PLUGINS}.sh" ]; then
+        # Built-in plugin name (e.g. "python3", "go", "docker")
+        if [ -f "$BUILD_DIR/plugins/languages/${PLUGINS}.sh" ]; then
+            PLUGINS_ARG="plugins/languages/${PLUGINS}.sh"
+        elif [ -f "$BUILD_DIR/plugins/tools/${PLUGINS}.sh" ]; then
+            PLUGINS_ARG="plugins/tools/${PLUGINS}.sh"
+        else
             echo "Unknown plugin: ${PLUGINS}" >&2
-            echo "Available built-ins: cpp go java python2 python3 react ruby rust typescript" >&2
+            echo "Available built-ins: cpp go java python2 python3 react ruby rust typescript docker" >&2
             exit 1
         fi
-        PLUGINS_ARG="plugins/languages/${PLUGINS}.sh"
     fi
 fi
 
