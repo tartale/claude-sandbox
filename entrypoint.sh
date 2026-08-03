@@ -31,6 +31,11 @@ chmod a+r /tmp/gitconfig
 CLAUDE_ARGS=$(printf '%q ' "$@")
 export CLAUDE_ARGS
 
+# grant access to a bind-mounted docker socket, if present
+if [ -S /var/run/docker.sock ]; then
+    usermod -aG "$(stat -c '%g' /var/run/docker.sock)" claude
+fi
+
 su -m -s /bin/bash claude << 'EOF'
 set -e
 export HOME=/home/claude
