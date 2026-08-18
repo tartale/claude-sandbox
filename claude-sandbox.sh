@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
+if [[ "${DEBUG}" == "true" ]]; then trap "set +x" RETURN; set -x; fi
+
 CS_IMAGE_TAG=${CS_IMAGE_TAG:-local}
 CS_IMAGE="ghcr.io/tartale/claude-sandbox:${CS_IMAGE_TAG}"
 CONTAINER_NAME="claude-sandbox-$(basename "$(pwd)")-$(openssl rand -hex 2)"
@@ -42,6 +44,9 @@ if [ -f "$CS_ENV_FILE" ]; then
         ENV_ARGS+=(-e "$key")
     done < <(grep -Ev '^\s*(#|$)' "$CS_ENV_FILE" | sed 's/^export //')
 fi
+
+# something in the if block unsets '-x'; reset it if needed
+if [[ "${DEBUG}" == "true" ]]; then set -x; fi
 
 DOCKER_FLAGS=(${DOCKER_FLAGS})
 if [ -t 0 ] || [ -c /dev/tty ]; then
