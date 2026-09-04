@@ -42,6 +42,15 @@ if [ -S /var/run/docker.sock ]; then
     usermod -aG "$docker_group" claude
 fi
 
+# Host paths leaked in through the env file (e.g. TMPDIR exported by direnv)
+# do not exist inside the container. claude would try to create the whole path
+# from / as the unprivileged claude user and die with
+# "EACCES: permission denied, mkdir '/<first-component>'".
+if [ -n "$TMPDIR" ] && [ ! -d "$TMPDIR" ]; then
+    echo "warning: TMPDIR=$TMPDIR does not exist in the container; using /tmp" >&2
+    export TMPDIR=/tmp
+fi
+
 su -m -s /bin/bash claude << 'EOF'
 set -e
 export HOME=/home/claude
