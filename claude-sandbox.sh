@@ -48,6 +48,31 @@ fi
 # something in the if block unsets '-x'; reset it if needed
 if [[ "${DEBUG}" == "true" ]]; then set -x; fi
 
+# Every project is mounted at /workspace, so Claude Code derives the same
+# project key ("-workspace") for all of them and piles every project's
+# transcripts, plans and history into one bucket. Give each project its own
+# host-side bucket and bind-mount it over that key. The slug matches the one
+# Claude Code derives natively, so a project already run outside the sandbox
+# keeps its history.
+CS_PROJECT_SLUG=$(pwd | sed 's#[^a-zA-Z0-9-]#-#g')
+CS_PROJECT_STATE="${HOME}/.claude/projects/${CS_PROJECT_SLUG}"
+mkdir -p "${CS_PROJECT_STATE}"
+
+# Project-scope memory lives inside the project so it is committed with the
+# code and reaches the user's other machines on a git pull.
+CS_PROJECT_MEMORY="$(pwd)/.claude/memory"
+mkdir -p "${CS_PROJECT_MEMORY}"
+
+# User-scope rules and memories: a private git repo, cloned on each machine.
+USER_CONFIG_ARGS=()
+if [ -n "${CS_USER_CONFIG}" ]; then
+    if [ ! -d "${CS_USER_CONFIG}" ]; then
+        echo "CS_USER_CONFIG=${CS_USER_CONFIG} does not exist; clone the user config repo there" >&2
+        exit 1
+    fi
+    USER_CONFIG_ARGS=(-v "${CS_USER_CONFIG}:/home/claude/.claude-user")
+fi
+
 DOCKER_FLAGS=(${DOCKER_FLAGS})
 if [ -t 0 ] || [ -c /dev/tty ]; then
     DOCKER_FLAGS+=(-it)
@@ -73,6 +98,9 @@ DOCKER_ARGS=(
     -v "$(pwd):/workspace"
     -v "${HOME}/.claude.json:/home/claude/.claude.json"
     -v "${HOME}/.claude:/home/claude/.claude"
+    -v "${CS_PROJECT_STATE}:/home/claude/.claude/projects/-workspace"
+    -v "${CS_PROJECT_MEMORY}:/home/claude/.claude/projects/-workspace/memory"
+    "${USER_CONFIG_ARGS[@]}"
     -v "${HOME}/.gitconfig:/home/claude/.gitconfig:ro"
     -v "${CS_HOSTS}:/etc/hosts:ro"
     "${CS_IMAGE}" "$@"

@@ -204,6 +204,84 @@ PLUGINS=./go-react.sh CS_IMAGE_TAG=go-react \
 PLUGINS=plugins/languages/python2.sh ./claude-sandbox.sh
 ```
 
+## Rules and memories
+
+Claude accumulates two very different kinds of knowledge, and they want to live in different places:
+
+- **Project scope** — how *this* codebase is built, tested and deployed; its gotchas and ongoing work. This should travel with the repo, so a teammate (or you on another machine) gets it from a `git pull`.
+- **User scope** — who you are and how you like to work. This should follow *you* between projects and between machines, and has no business in any one project's history.
+
+Left alone, the sandbox blurs both. Every project is mounted at `/workspace`, so Claude Code derives the same project key for all of them and piles every project's memories, transcripts and history into a single `~/.claude/projects/-workspace/` bucket on the host. The sandbox splits them instead.
+
+### Project scope
+
+Each project gets its own state bucket on the host, keyed by its real path, and its memory directory is bind-mounted from the project itself:
+
+```
+<project>/CLAUDE.md                    project rules            (commit)
+<project>/.claude/memory/              project memories         (commit)
+<project>/.claude/settings.json        shared project settings  (commit)
+<project>/.claude/settings.local.json  machine-local overrides  (gitignore)
+```
+
+`.claude/memory/` is the directory Claude writes memories to, so memories recorded during a session land in the project and get committed alongside the code they describe. Add this to the project's `.gitignore`:
+
+```gitignore
+.claude/settings.local.json
+```
+
+Nothing else under `.claude/` should be ignored — that's the point.
+
+### User scope
+
+User-scope rules and memories live in a small private git repo that you clone on each machine. Point `CS_USER_CONFIG` at the checkout:
+
+```bash
+git clone git@github.com:you/claude-user.git ~/.claude-user
+export CS_USER_CONFIG="$HOME/.claude-user"
+```
+
+The repo is bind-mounted at `/home/claude/.claude-user` and scaffolded on first use:
+
+```
+CLAUDE.md          your rules, loaded into every session on every project
+memory/MEMORY.md   index of your user-scope memories
+memory/*.md        the memories themselves
+```
+
+At container start the sandbox pulls the repo, then generates `~/.claude/CLAUDE.md` from it — the scope routing rules, your `CLAUDE.md`, and your memory index, inlined so Claude always has them. That file is regenerated on every start; edit `~/.claude-user/CLAUDE.md` instead.
+
+Because it's a git repo, pushing is what makes a memory reach your other machines. From inside the container:
+
+```bash
+claude-user-sync                      # commit everything and push
+claude-user-sync "Prefer pnpm"        # with a message
+```
+
+Then `git pull` in the checkout on your other machine, or just start a sandbox there — the pull happens automatically.
+
+### Which scope does something belong in?
+
+Ask whether it would still be true on a different project. "Run the full test suite before pushing" is user scope; "run `./actual test` before pushing" is project scope. Claude is given this rule in the generated `CLAUDE.md`, but it's worth knowing when you're filing things by hand.
+
+### Migrating an existing setup
+
+If you've been running the sandbox already, everything from every project is in `~/.claude/projects/-workspace/` on the host. Nothing is deleted — that bucket is simply no longer used, since each project now mounts its own. To carry old memories forward, sort them by hand:
+
+```bash
+ls ~/.claude/projects/-workspace/memory/
+# project facts  -> <project>/.claude/memory/   then commit
+# personal facts -> ~/.claude-user/memory/      then claude-user-sync
+```
+
+Remember to move the matching lines in `MEMORY.md` too, since that index is what Claude reads first.
+
+If you previously hand-symlinked the memory directory into a project, drop the symlink — the bind mount replaces it:
+
+```bash
+[ -L ~/.claude/projects/-workspace/memory ] && rm ~/.claude/projects/-workspace/memory
+```
+
 ## Environment variables
 
 | Variable | Description |
@@ -212,6 +290,7 @@ PLUGINS=plugins/languages/python2.sh ./claude-sandbox.sh
 | `CS_ENV_FILE` | Path to an env file to pass into the container (default: `.env`) |
 | `LANGUAGE_VERSIONS` | Space-separated list of language versions in `<language>-<version>` format (e.g. `"go-1.25.10"`). Each plugin extracts its own entry; omitted plugins default to latest stable. |
 | `PLUGINS` | Path to a plugin script or directory of plugin scripts to install |
+| `CS_USER_CONFIG` | Path to a checkout of your user config repo (user-scope rules and memories). Unset disables the user scope. |
 
 ### Passing environment variables into the container
 
