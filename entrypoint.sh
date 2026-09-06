@@ -58,6 +58,10 @@ umask ${CMASK}
 
 export GIT_CONFIG_GLOBAL=/tmp/gitconfig
 
+# Split project-scope config (committed with the repo) from user-scope config
+# (a private repo that follows the user between machines).
+setup-scopes.sh
+
 node -e "
 const fs = require('fs');
 const cfgPath = process.env.HOME + '/.claude.json';

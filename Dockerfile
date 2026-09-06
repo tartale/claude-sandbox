@@ -41,7 +41,10 @@ RUN chown claude:claude /workspace
 
 COPY plugins/install.sh /usr/local/bin/install-plugins.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/install-plugins.sh /usr/local/bin/entrypoint.sh
+COPY setup-scopes.sh /usr/local/bin/setup-scopes.sh
+COPY user-sync.sh /usr/local/bin/claude-user-sync
+RUN chmod +x /usr/local/bin/install-plugins.sh /usr/local/bin/entrypoint.sh \
+             /usr/local/bin/setup-scopes.sh /usr/local/bin/claude-user-sync
 
 ARG LANGUAGE_VERSIONS=""
 ARG PLUGINS=""
