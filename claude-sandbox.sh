@@ -73,6 +73,9 @@ if [ -n "${CS_USER_CONFIG}" ]; then
     USER_CONFIG_ARGS=(-v "${CS_USER_CONFIG}:/home/claude/.claude-user")
 fi
 
+# Deliberately unquoted: DOCKER_FLAGS is a user-supplied string of separate docker arguments
+# (e.g. "-v a:b -v c:d") that has to word-split into one array element each.
+# shellcheck disable=SC2206
 DOCKER_FLAGS=(${DOCKER_FLAGS})
 if [ -t 0 ] || [ -c /dev/tty ]; then
     DOCKER_FLAGS+=(-it)
