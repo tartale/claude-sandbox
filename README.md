@@ -102,11 +102,23 @@ The `plugins/tools/` directory contains ready-made tool packs:
 | Plugin | Installs |
 |---|---|
 | `plugins/tools/docker.sh` | Docker CLI (client only), Buildx, and Compose plugins |
+| `plugins/tools/playwright.sh` | Playwright CLI/test runner plus Chromium, Firefox, and their system libraries |
 
 Built-in plugins are resolved by name regardless of directory, so `PLUGINS=docker` and `PLUGINS=go` both work. The Docker plugin installs only the client; bind-mount the host's Docker socket so the CLI can reach the host daemon:
 
 ```bash
 DOCKER_FLAGS="-v /var/run/docker.sock:/var/run/docker.sock" ./claude-sandbox.sh
+```
+
+The Playwright plugin bakes in the browsers *and* the system libraries they need — the part a plain
+`npm install playwright` inside a running sandbox can't do, since installing those libraries needs
+root. Browsers land in `/ms-playwright` with `PLAYWRIGHT_BROWSERS_PATH` exported for every shell, so
+they resolve whatever uid the container runs as. They are headless natively, so no Xvfb wrapper is
+needed. Browser revisions are tied to the Playwright version, so pin it to match the project's own
+dependency:
+
+```bash
+PLUGINS=playwright LANGUAGE_VERSIONS="playwright-1.55.0" CS_IMAGE_TAG=my-playwright ./build-image.sh
 ```
 
 ### Using a single plugin
