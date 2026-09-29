@@ -91,6 +91,7 @@ Plugins are shell scripts that install additional tools into the sandbox. The `p
 | `plugins/languages/java.sh` | OpenJDK, Maven | `java-<major>` | `java-21` |
 | `plugins/languages/python2.sh` | `pip`, `venv`, `pipx`, `uv` | `python-<version>` | `python-3.13.2` |
 | `plugins/languages/python3.sh` | `pip`, `venv`, `pipx`, `uv` (uses `python3-` version prefix) | `python3-<version>` | `python3-3.13.2` |
+| `plugins/languages/react.sh` | Chromium, Firefox, TypeScript, `pnpm`, `vite`, `create-next-app`, `eslint`, `prettier` | — (unversioned) | — |
 | `plugins/languages/ruby.sh` | Ruby, Bundler | `ruby-<version>` | `ruby-3.3.0` |
 | `plugins/languages/rust.sh` | Rust via rustup (`cargo`, `rustc`, `rustfmt`, `clippy`) | `rust-<version>` | `rust-1.78.0` |
 | `plugins/languages/typescript.sh` | TypeScript, `ts-node`, `tsx`, `@types/node` | `typescript-<version>` | `typescript-5.4.0` |
