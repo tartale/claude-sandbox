@@ -9,6 +9,7 @@ RUN apt-get update \
       > /etc/apt/sources.list.d/github-cli.list \
  && apt-get update \
  && apt-get install -y \
+      doas \
       gh \
       git \
       git-lfs \
