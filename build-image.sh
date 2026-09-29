@@ -48,7 +48,7 @@ if [ -n "$PLUGINS" ]; then
             PLUGINS_ARG="plugins/tools/${PLUGINS}.sh"
         else
             echo "Unknown plugin: ${PLUGINS}" >&2
-            echo "Available built-ins: cpp go java python2 python3 react ruby rust typescript docker playwright" >&2
+            echo "Available built-ins: cpp go java python2 python3 react ruby rust typescript docker" >&2
             exit 1
         fi
     fi

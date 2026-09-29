@@ -48,14 +48,6 @@ fi
 # something in the if block unsets '-x'; reset it if needed
 if [[ "${DEBUG}" == "true" ]]; then set -x; fi
 
-# A TMPDIR from the env file (e.g. exported by direnv) that points inside the
-# project is a host path; the same directory is /workspace/... in the container.
-if [[ "${TMPDIR:-}" == "$(pwd)"/* ]]; then
-    mkdir -p "${TMPDIR}"
-    TMPDIR="/workspace${TMPDIR#"$(pwd)"}"
-    export TMPDIR
-fi
-
 # Every project is mounted at /workspace, so Claude Code derives the same
 # project key ("-workspace") for all of them and piles every project's
 # transcripts, plans and history into one bucket. Give each project its own
