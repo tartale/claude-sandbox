@@ -2,3 +2,4 @@
 .env*
 .envrc
 plugins/.build
+.tmp
