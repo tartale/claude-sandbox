@@ -33,27 +33,30 @@ if [ -n "$PLUGINS" ]; then
     PLUGINS_ARGS=(-e PLUGINS=/plugins -v "$PLUGINS:/plugins:ro")
 fi
 
+# The env file is read as data, never executed: it lives in the workspace, which
+# the agent can write, so sourcing it here would run the agent's edits on the
+# host. Values go to docker through --env-file, which keeps them out of argv.
 CS_ENV_FILE="${CS_ENV_FILE:-.env}"
-ENV_ARGS=()
+ENV_LINES=()
 if [ -f "$CS_ENV_FILE" ]; then
-    set -a
-    # shellcheck source=/dev/null
-    source "$CS_ENV_FILE"
-    set +a
-    while IFS='=' read -r key _; do
-        ENV_ARGS+=(-e "$key")
-    done < <(grep -Ev '^\s*(#|$)' "$CS_ENV_FILE" | sed 's/^export //')
-fi
-
-# something in the if block unsets '-x'; reset it if needed
-if [[ "${DEBUG}" == "true" ]]; then set -x; fi
-
-# A TMPDIR from the env file (e.g. exported by direnv) that points inside the
-# project is a host path; the same directory is /workspace/... in the container.
-if [[ "${TMPDIR:-}" == "$(pwd)"/* ]]; then
-    mkdir -p "${TMPDIR}"
-    TMPDIR="/workspace${TMPDIR#"$(pwd)"}"
-    export TMPDIR
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line#export }"
+        [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue
+        key="${BASH_REMATCH[1]}"
+        value="${BASH_REMATCH[2]}"
+        case "$value" in
+            \"*\") value="${value#\"}"; value="${value%\"}" ;;
+            \'*\') value="${value#\'}"; value="${value%\'}" ;;
+        esac
+        # A TMPDIR inside the project is a host path; the same directory is
+        # /workspace/... in the container.
+        if [ "$key" = "TMPDIR" ] && [[ "$value" == "$(pwd)"/* ]]; then
+            mkdir -p "$value"
+            value="/workspace${value#"$(pwd)"}"
+        fi
+        ENV_LINES+=("${key}=${value}")
+    done < "$CS_ENV_FILE"
 fi
 
 # Every project is mounted at /workspace, so Claude Code derives the same
@@ -81,6 +84,11 @@ if [ -n "${CS_USER_CONFIG}" ]; then
     USER_CONFIG_ARGS=(-v "${CS_USER_CONFIG}:/home/claude/.claude-user")
 fi
 
+MEMORY_ARGS=()
+if [ -n "${CS_MEMORY}" ]; then
+    MEMORY_ARGS=(--memory "${CS_MEMORY}")
+fi
+
 # Deliberately unquoted: DOCKER_FLAGS is a user-supplied string of separate docker arguments
 # (e.g. "-v a:b -v c:d") that has to word-split into one array element each.
 # shellcheck disable=SC2206
@@ -100,8 +108,13 @@ DOCKER_ARGS=(
     "${DOCKER_FLAGS[@]}"
     --platform "${PLATFORM}"
     --network=host
+    --cap-drop=ALL
+    --cap-add=CHOWN --cap-add=DAC_OVERRIDE --cap-add=FOWNER
+    --cap-add=SETUID --cap-add=SETGID
+    --security-opt=no-new-privileges
+    --pids-limit "${CS_PIDS_LIMIT:-4096}"
+    "${MEMORY_ARGS[@]}"
     --name "${CONTAINER_NAME}"
-    "${ENV_ARGS[@]}"
     -e CUID="$(id -u)"
     -e CGID="$(id -g)"
     -e CMASK="$(umask)"
@@ -114,12 +127,13 @@ DOCKER_ARGS=(
     "${USER_CONFIG_ARGS[@]}"
     -v "${HOME}/.gitconfig:/home/claude/.gitconfig:ro"
     -v "${CS_HOSTS}:/etc/hosts:ro"
-    "${CS_IMAGE}" "$@"
 )
 
 # When piped (e.g. curl | bash), stdin is not a TTY but /dev/tty still
 # gives us access to the terminal — route docker's stdin through it.
 if ! [ -t 0 ] && [ -c /dev/tty ]; then
-    exec docker run "${DOCKER_ARGS[@]}" </dev/tty
+    exec </dev/tty
 fi
-exec docker run "${DOCKER_ARGS[@]}"
+# The process substitution must be expanded on the exec line itself: bash closes
+# it once the command that created it finishes, so it cannot live in DOCKER_ARGS.
+exec docker run "${DOCKER_ARGS[@]}" --env-file <(printf '%s\n' "${ENV_LINES[@]}") "${CS_IMAGE}" "$@"
