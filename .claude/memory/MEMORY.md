@@ -1,0 +1,2 @@
+- [No merge without approval](no-merge-without-approval.md) — claude-sandbox: never merge without the user's OK; users run the launcher from main
+- [Launcher compat breaks are silent](launcher-compat-breaks-are-silent.md) — .env/launcher-var/hardening changes fail silently; warn and test old-vs-new
