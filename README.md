@@ -304,6 +304,8 @@ If you previously hand-symlinked the memory directory into a project, drop the s
 | `LANGUAGE_VERSIONS` | Space-separated list of language versions in `<language>-<version>` format (e.g. `"go-1.25.10"`). Each plugin extracts its own entry; omitted plugins default to latest stable. |
 | `PLUGINS` | Path to a plugin script or directory of plugin scripts to install |
 | `CS_USER_CONFIG` | Path to a checkout of your user config repo (user-scope rules and memories). Unset disables the user scope. |
+| `CS_PIDS_LIMIT` | Maximum processes in the container (default: `4096`). Kernels without PID-cgroup support ignore it and docker prints a warning. |
+| `CS_MEMORY` | Memory limit for the container, e.g. `8g` (default: unlimited) |
 
 ### Passing environment variables into the container
 
@@ -315,13 +317,36 @@ GITHUB_TOKEN=ghp_...
 MY_API_KEY=...
 ```
 
-The `.env` file follows standard `KEY=VALUE` format. Variables not listed in the file are not passed to the container.
+The `.env` file follows standard `KEY=VALUE` format, one variable per line; blank lines, `#` comments and a leading `export ` are ignored, and one layer of surrounding quotes is stripped. Variables not listed in the file are not passed to the container.
+
+The file is read as data, never executed. There is no `$VAR` expansion or command substitution, and it configures the container only, not the launcher (set `CS_*` variables in your shell). A `TMPDIR` that points inside the project is rewritten to its `/workspace/...` path.
 
 To use a different file name, set `CS_ENV_FILE`:
 
 ```bash
 CS_ENV_FILE=.env.sandbox /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)"
 ```
+
+## Security model
+
+The container is the only boundary: Claude runs with `--dangerously-skip-permissions`, so anything the container can reach, the agent can reach.
+
+What the sandbox does:
+
+- Runs as your UID/GID, not root, and only the workspace and Claude's own state are mounted from the host.
+- Drops all Linux capabilities except the five the entrypoint needs to switch users, and sets `no-new-privileges`.
+- Limits processes (`CS_PIDS_LIMIT`) and, optionally, memory (`CS_MEMORY`).
+- Reads `.env` as data, so an agent that edits it cannot run code on the host at the next launch.
+
+What it does **not** do — know these before pointing it at something you care about:
+
+- **Docker socket:** mounting it (as the `docker` plugin expects) gives the agent root on the host.
+- **Host network:** `--network=host` exposes services on the host's loopback and LAN.
+- **`~/.claude`:** mounted whole and writable — your credentials and every project's transcripts are reachable.
+- **Files you run on the host:** the agent can edit `.git/hooks`, `.envrc`, `Makefile` and similar files in the workspace, which run outside the sandbox later.
+- **Tokens and rules:** `CS_GITHUB_TOKEN` is as powerful as you scoped it, and the user-scope repo is writable and feeds every session.
+
+Each of these is tracked as a `security` issue in the repository.
 
 ## License
 
