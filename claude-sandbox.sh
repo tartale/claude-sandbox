@@ -91,7 +91,6 @@ chmod 644 "${CS_HOSTS}"
 DOCKER_ARGS=(
     "${DOCKER_FLAGS[@]}"
     --platform "${PLATFORM}"
-    --network=host
     --name "${CONTAINER_NAME}"
     "${ENV_ARGS[@]}"
     -e CUID="$(id -u)"
