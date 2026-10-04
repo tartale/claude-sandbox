@@ -34,6 +34,11 @@ if [ -n "$PLUGINS" ]; then
 fi
 
 CS_ENV_FILE="${CS_ENV_FILE:-.env}"
+# `source` searches $PATH when the filename has no slash, so make the path absolute.
+case "$CS_ENV_FILE" in
+  /*) ;;                                         # already absolute
+  *)  CS_ENV_FILE="${PWD}/${CS_ENV_FILE}" ;;
+esac
 ENV_ARGS=()
 if [ -f "$CS_ENV_FILE" ]; then
     set -a
