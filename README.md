@@ -303,6 +303,7 @@ If you previously hand-symlinked the memory directory into a project, drop the s
 | `LANGUAGE_VERSIONS` | Space-separated list of language versions in `<language>-<version>` format (e.g. `"go-1.25.10"`). Each plugin extracts its own entry; omitted plugins default to latest stable. |
 | `PLUGINS` | Path to a plugin script or directory of plugin scripts to install |
 | `CS_USER_CONFIG` | Path to a checkout of your user config repo (user-scope rules and memories). Unset disables the user scope. |
+| `CS_DOCKER_LOGIN` | Set to `true` to mount the host's `~/.docker/config.json` (or `$DOCKER_CONFIG/config.json`) read-only so the container's docker CLI can use your registry logins. Off by default; the credentials are readable by anything in the container. Logins held in a credential helper (`credsStore`, e.g. macOS Keychain) are not available in the container. |
 
 ### Passing environment variables into the container
 
