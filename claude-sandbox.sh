@@ -78,6 +78,22 @@ if [ -n "${CS_USER_CONFIG}" ]; then
     USER_CONFIG_ARGS=(-v "${CS_USER_CONFIG}:/home/claude/.claude-user")
 fi
 
+# Opt-in: share the host's docker registry logins (read-only) so the container's
+# docker CLI can pull and push private images. Anything in the container can read
+# these credentials.
+DOCKER_LOGIN_ARGS=()
+if [ "${CS_DOCKER_LOGIN}" = "true" ]; then
+    CS_DOCKER_CONFIG="${DOCKER_CONFIG:-${HOME}/.docker}/config.json"
+    if [ ! -f "${CS_DOCKER_CONFIG}" ]; then
+        echo "CS_DOCKER_LOGIN=true but ${CS_DOCKER_CONFIG} does not exist; run 'docker login' first" >&2
+        exit 1
+    fi
+    if grep -qE '"(credsStore|credHelpers)"' "${CS_DOCKER_CONFIG}"; then
+        echo "warning: ${CS_DOCKER_CONFIG} delegates to a credential helper that is not in the container; logins stored there will not work" >&2
+    fi
+    DOCKER_LOGIN_ARGS=(-v "${CS_DOCKER_CONFIG}:/home/claude/.docker/config.json:ro")
+fi
+
 # Deliberately unquoted: DOCKER_FLAGS is a user-supplied string of separate docker arguments
 # (e.g. "-v a:b -v c:d") that has to word-split into one array element each.
 # shellcheck disable=SC2206
@@ -108,6 +124,7 @@ DOCKER_ARGS=(
     -v "${CS_PROJECT_STATE}:/home/claude/.claude/projects/-workspace"
     -v "${CS_PROJECT_MEMORY}:/home/claude/.claude/projects/-workspace/memory"
     "${USER_CONFIG_ARGS[@]}"
+    "${DOCKER_LOGIN_ARGS[@]}"
     -v "${HOME}/.gitconfig:/home/claude/.gitconfig:ro"
     -v "${CS_HOSTS}:/etc/hosts:ro"
     "${CS_IMAGE}" "$@"
