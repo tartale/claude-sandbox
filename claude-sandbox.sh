@@ -142,6 +142,9 @@ DOCKER_ARGS=(
     "${DOCKER_FLAGS[@]}"
     --platform "${PLATFORM}"
     --name "${CONTAINER_NAME}"
+    --cap-drop=ALL
+    --cap-add=CHOWN --cap-add=DAC_OVERRIDE --cap-add=FOWNER --cap-add=SETUID --cap-add=SETGID
+    --security-opt=no-new-privileges
     "${LIMIT_ARGS[@]}"
     "${ENV_ARGS[@]}"
     -e CUID="$(id -u)"
