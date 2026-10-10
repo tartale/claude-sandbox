@@ -15,3 +15,8 @@ ln -sf /usr/local/cargo/bin/rustc   /usr/local/bin/rustc
 ln -sf /usr/local/cargo/bin/rustup  /usr/local/bin/rustup
 ln -sf /usr/local/cargo/bin/rustfmt /usr/local/bin/rustfmt
 ln -sf /usr/local/cargo/bin/clippy-driver /usr/local/bin/clippy-driver
+
+# The exports above only live in this build shell. Point rustup's default
+# location (~/.rustup) at the toolchain so runtime shells find it with no env
+# vars. CARGO_HOME stays unset at runtime, so ~/.cargo is writable by claude.
+ln -sfn /usr/local/rustup /home/claude/.rustup

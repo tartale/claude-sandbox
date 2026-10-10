@@ -110,6 +110,8 @@ Built-in plugins are resolved by name regardless of directory, so `PLUGINS=docke
 DOCKER_FLAGS="-v /var/run/docker.sock:/var/run/docker.sock" ./claude-sandbox.sh
 ```
 
+Mounting the socket gives the sandbox root on the host (it can start privileged containers), so the launcher prints a warning when it sees one.
+
 The Playwright plugin bakes in the browsers *and* the system libraries they need — the part a plain
 `npm install playwright` inside a running sandbox can't do, since installing those libraries needs
 root. Browsers land in `/ms-playwright` with `PLAYWRIGHT_BROWSERS_PATH` exported for every shell, so
@@ -304,6 +306,12 @@ If you previously hand-symlinked the memory directory into a project, drop the s
 | `PLUGINS` | Path to a plugin script or directory of plugin scripts to install |
 | `CS_USER_CONFIG` | Path to a checkout of your user config repo (user-scope rules and memories). Unset disables the user scope. |
 | `CS_DOCKER_LOGIN` | Set to `true` to mount the host's `~/.docker/config.json` (or `$DOCKER_CONFIG/config.json`) read-only so the container's docker CLI can use your registry logins. Off by default; the credentials are readable by anything in the container. Logins held in a credential helper (`credsStore`, e.g. macOS Keychain) are not available in the container. |
+| `CS_PIDS_LIMIT` | Maximum number of processes in the container (`docker run --pids-limit`). Unset means no limit. |
+| `CS_MEMORY` | Memory limit for the container (`docker run --memory`, e.g. `8g`). Unset means no limit. |
+
+### GitHub token
+
+Set `CS_GITHUB_TOKEN` (e.g. in `.env`) to let `git` and `gh` authenticate inside the container. Whatever the token can do, the agent can do, so use a [fine-grained personal access token](https://github.com/settings/personal-access-tokens) limited to the one repository you are working on, with only *Contents* and *Pull requests* write access, and no administration or workflow permissions.
 
 ### Passing environment variables into the container
 
@@ -316,6 +324,8 @@ MY_API_KEY=...
 ```
 
 The `.env` file follows standard `KEY=VALUE` format. Variables not listed in the file are not passed to the container.
+
+The launcher sources this file as shell on the host, and the container can edit it, so keep it to plain `KEY=VALUE` lines. The launcher warns when a line contains a command or `$(...)`.
 
 To use a different file name, set `CS_ENV_FILE`:
 
