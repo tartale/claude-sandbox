@@ -4,7 +4,8 @@ set -e
 if [[ "${DEBUG}" == "true" ]]; then trap "set +x" RETURN; set -x; fi
 
 CS_IMAGE_TAG=${CS_IMAGE_TAG:-local}
-CS_IMAGE="ghcr.io/tartale/claude-sandbox:${CS_IMAGE_TAG}"
+CS_IMAGE_REPO="${CS_IMAGE_REPO:-ghcr.io/tartale/claude-sandbox}"
+CS_IMAGE="${CS_IMAGE_REPO}:${CS_IMAGE_TAG}"
 CONTAINER_NAME="claude-sandbox-$(basename "$(pwd)")-$(openssl rand -hex 2)"
 echo "Starting container: $CONTAINER_NAME"
 

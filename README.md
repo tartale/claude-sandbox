@@ -2,7 +2,7 @@
 
 Runs [Claude Code](https://github.com/anthropics/claude-code) in a Docker container, mounting your current directory as the workspace. This gives Claude a sandboxed environment to read and modify files without touching the rest of your system.
 
-The image is published to the GitHub Container Registry as [`ghcr.io/tartale/claude-sandbox`](https://github.com/tartale/claude-sandbox/pkgs/container/claude-sandbox).
+Images are tagged `ghcr.io/tartale/claude-sandbox:<tag>` (the repository is configurable with `CS_IMAGE_REPO`). CI does not build or publish them on every change; you build the image you need with [`build-image.sh`](#building-a-custom-image), or the maintainer publishes a release by pushing a `v*` tag.
 
 Your Claude credentials (`~/.claude` and `~/.claude.json`) are bind-mounted into the container so you stay logged in.
 
@@ -19,11 +19,7 @@ The container runs as a user matching your host UID and GID, so files written to
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)"
 ```
 
-Run this from any project directory. Claude Code will start inside a container with that directory as `/workspace`. The launcher pulls `ghcr.io/tartale/claude-sandbox:latest` automatically; to pre-pull it:
-
-```bash
-docker pull ghcr.io/tartale/claude-sandbox:latest
-```
+Run this from any project directory. Claude Code will start inside a container with that directory as `/workspace`. The launcher uses the image `ghcr.io/tartale/claude-sandbox:local` (override with `CS_IMAGE_TAG` and `CS_IMAGE_REPO`). Docker pulls it if it exists in the registry; otherwise build it first, for example `CS_IMAGE_TAG=local` with the [`build-image.sh`](#building-a-custom-image) one-liner below. Published release images (`:latest`, language tags) reflect the last tagged release, not the latest `main`.
 
 ### Passing arguments to Claude
 
@@ -61,6 +57,7 @@ CS_IMAGE_TAG=my-sandbox /bin/bash -c "$(curl -fsSL https://raw.githubusercontent
 
 | Variable | Description |
 |---|---|
+| `CS_IMAGE_REPO` | Image repository to build and push to, e.g. `registry.example.com/team/sandbox` (default: `ghcr.io/tartale/claude-sandbox`) |
 | `CS_IMAGE_TAG` | Tag for the built image (default: `custom`) |
 | `PLUGINS` | Built-in plugin name, local path, or URL (see [Plugins](#plugins) below) |
 | `LANGUAGE_VERSIONS` | Space-separated `<language>-<version>` pins (e.g. `"go-1.25.10"`) |
@@ -300,7 +297,8 @@ If you previously hand-symlinked the memory directory into a project, drop the s
 
 | Variable | Description |
 |---|---|
-| `CS_IMAGE_TAG` | Tag of the `ghcr.io/tartale/claude-sandbox` image to use (default: `latest`) |
+| `CS_IMAGE_REPO` | Image repository, including registry host and namespace (default: `ghcr.io/tartale/claude-sandbox`). Set the same value for `build-image.sh` and the launcher. |
+| `CS_IMAGE_TAG` | Tag of the image to use (default: `local`) |
 | `CS_ENV_FILE` | Path to an env file to pass into the container (default: `.env`) |
 | `LANGUAGE_VERSIONS` | Space-separated list of language versions in `<language>-<version>` format (e.g. `"go-1.25.10"`). Each plugin extracts its own entry; omitted plugins default to latest stable. |
 | `PLUGINS` | Path to a plugin script or directory of plugin scripts to install |
