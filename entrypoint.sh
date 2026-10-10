@@ -22,8 +22,9 @@ fi
 
 printf '[url "https://github.com/"]\n\tinsteadOf = git@github.com:\n' > /tmp/gitconfig
 if [ -n "$GITHUB_TOKEN" ]; then
-    printf '#!/bin/sh\necho username=x-access-token\necho password=%s\n' "$GITHUB_TOKEN" > /tmp/git-credential-github-token
-    chmod +x /tmp/git-credential-github-token
+    (umask 077; printf '#!/bin/sh\necho username=x-access-token\necho password=%s\n' "$GITHUB_TOKEN" > /tmp/git-credential-github-token)
+    chown claude:claude /tmp/git-credential-github-token
+    chmod 700 /tmp/git-credential-github-token
     printf '[credential "https://github.com"]\n\thelper = /tmp/git-credential-github-token\n' >> /tmp/gitconfig
 fi
 chmod a+r /tmp/gitconfig

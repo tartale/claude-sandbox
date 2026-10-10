@@ -41,6 +41,15 @@ case "$CS_ENV_FILE" in
 esac
 ENV_ARGS=()
 if [ -f "$CS_ENV_FILE" ]; then
+    # The file is sourced as shell on the host, and the container can edit it.
+    # Flag anything that is not a plain NAME=value line (line numbers only, so
+    # secrets never reach the terminal).
+    CS_ENV_RISKY=$({ grep -nE '\$\(|`' "$CS_ENV_FILE"
+                     grep -nEv '^[[:space:]]*(#|(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=|$)' "$CS_ENV_FILE"
+                   } | cut -d: -f1 | sort -nu | paste -sd, - || true)
+    if [ -n "$CS_ENV_RISKY" ]; then
+        echo "warning: ${CS_ENV_FILE} is executed as shell on the host; line(s) ${CS_ENV_RISKY} contain commands or substitutions. Review them: the sandbox can edit this file." >&2
+    fi
     set -a
     # shellcheck source=/dev/null
     source "$CS_ENV_FILE"
@@ -94,6 +103,15 @@ if [ "${CS_DOCKER_LOGIN}" = "true" ]; then
     DOCKER_LOGIN_ARGS=(-v "${CS_DOCKER_CONFIG}:/home/claude/.docker/config.json:ro")
 fi
 
+case "${DOCKER_FLAGS}" in
+    *docker.sock*)
+        echo "warning: the Docker socket is mounted; anything in the sandbox can start privileged containers and has root on this host." >&2 ;;
+esac
+
+LIMIT_ARGS=()
+[ -n "${CS_PIDS_LIMIT}" ] && LIMIT_ARGS+=(--pids-limit "${CS_PIDS_LIMIT}")
+[ -n "${CS_MEMORY}" ] && LIMIT_ARGS+=(--memory "${CS_MEMORY}")
+
 # Deliberately unquoted: DOCKER_FLAGS is a user-supplied string of separate docker arguments
 # (e.g. "-v a:b -v c:d") that has to word-split into one array element each.
 # shellcheck disable=SC2206
@@ -113,6 +131,7 @@ DOCKER_ARGS=(
     "${DOCKER_FLAGS[@]}"
     --platform "${PLATFORM}"
     --name "${CONTAINER_NAME}"
+    "${LIMIT_ARGS[@]}"
     "${ENV_ARGS[@]}"
     -e CUID="$(id -u)"
     -e CGID="$(id -g)"
