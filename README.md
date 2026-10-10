@@ -325,7 +325,9 @@ MY_API_KEY=...
 
 The `.env` file follows standard `KEY=VALUE` format. Variables not listed in the file are not passed to the container.
 
-The launcher sources this file as shell on the host, and the container can edit it, so keep it to plain `KEY=VALUE` lines. The launcher warns when a line contains a command or `$(...)`.
+The launcher sources this file as shell on the host, so keep it to plain `KEY=VALUE` lines. The launcher warns when a line contains a command or `$(...)`.
+
+The env file, `.envrc` and `.git/hooks` are mounted read-only inside the container, because they run on the host later (when you launch, `cd` with direnv, or commit) and an agent must not be able to plant code in them. Edit them from the host. `.git/config` stays writable, so review `git diff` and `.git/config` before running host-side tooling on a checkout an agent has touched.
 
 To use a different file name, set `CS_ENV_FILE`:
 
