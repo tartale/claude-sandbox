@@ -14,9 +14,11 @@ RUN apt-get update \
       git-lfs \
       jq \
       less \
+      lsof \
       make \
       openssh-client \
       procps \
+      psmisc \
       python3 \
       ripgrep \
       shellcheck \
