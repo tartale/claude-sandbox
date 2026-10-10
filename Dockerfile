@@ -18,7 +18,6 @@ RUN apt-get update \
       make \
       openssh-client \
       procps \
-      psmisc \
       python3 \
       ripgrep \
       shellcheck \
