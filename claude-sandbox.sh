@@ -48,7 +48,7 @@ if [ -f "$CS_ENV_FILE" ]; then
                      grep -nEv '^[[:space:]]*(#|(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=|$)' "$CS_ENV_FILE"
                    } | cut -d: -f1 | sort -nu | paste -sd, - || true)
     if [ -n "$CS_ENV_RISKY" ]; then
-        echo "warning: ${CS_ENV_FILE} is executed as shell on the host; line(s) ${CS_ENV_RISKY} contain commands or substitutions. Review them: the sandbox can edit this file." >&2
+        echo "warning: ${CS_ENV_FILE} is executed as shell on the host; line(s) ${CS_ENV_RISKY} contain commands or substitutions. Review them." >&2
     fi
     set -a
     # shellcheck source=/dev/null
@@ -58,6 +58,17 @@ if [ -f "$CS_ENV_FILE" ]; then
         ENV_ARGS+=(-e "$key")
     done < <(grep -Ev '^\s*(#|$)' "$CS_ENV_FILE" | sed 's/^export //')
 fi
+
+# Files the user later runs on the host (git hooks, direnv, the env file that
+# is sourced above) are mounted read-only so the agent cannot plant code in them.
+# Only paths that already exist are mounted; Docker would otherwise create them
+# as empty directories on the host.
+PROTECT_ARGS=()
+[ -d "$(pwd)/.git/hooks" ] && PROTECT_ARGS+=(-v "$(pwd)/.git/hooks:/workspace/.git/hooks:ro")
+[ -f "$(pwd)/.envrc" ] && PROTECT_ARGS+=(-v "$(pwd)/.envrc:/workspace/.envrc:ro")
+case "$CS_ENV_FILE" in
+  "$(pwd)"/*) [ -f "$CS_ENV_FILE" ] && PROTECT_ARGS+=(-v "$CS_ENV_FILE:/workspace/${CS_ENV_FILE#"$(pwd)"/}:ro") ;;
+esac
 
 # something in the if block unsets '-x'; reset it if needed
 if [[ "${DEBUG}" == "true" ]]; then set -x; fi
@@ -138,6 +149,7 @@ DOCKER_ARGS=(
     -e CMASK="$(umask)"
     "${PLUGINS_ARGS[@]}"
     -v "$(pwd):/workspace"
+    "${PROTECT_ARGS[@]}"
     -v "${HOME}/.claude.json:/home/claude/.claude.json"
     -v "${HOME}/.claude:/home/claude/.claude"
     -v "${CS_PROJECT_STATE}:/home/claude/.claude/projects/-workspace"
