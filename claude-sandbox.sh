@@ -113,7 +113,11 @@ if [ "${CS_DOCKER_LOGIN}" = "true" ]; then
     DOCKER_LOGIN_ARGS=(-v "${CS_DOCKER_CONFIG}:/home/claude/.docker/config.json:ro")
 fi
 
-case "${DOCKER_FLAGS}" in
+if [ -n "${DOCKER_FLAGS:-}" ] && [ -z "${CS_DOCKER_FLAGS:-}" ]; then
+    echo "warning: DOCKER_FLAGS is no longer read; rename it to CS_DOCKER_FLAGS." >&2
+fi
+
+case "${CS_DOCKER_FLAGS}" in
     *docker.sock*)
         echo "warning: the Docker socket is mounted; anything in the sandbox can start privileged containers and has root on this host." >&2 ;;
 esac
@@ -122,14 +126,14 @@ LIMIT_ARGS=()
 [ -n "${CS_PIDS_LIMIT}" ] && LIMIT_ARGS+=(--pids-limit "${CS_PIDS_LIMIT}")
 [ -n "${CS_MEMORY}" ] && LIMIT_ARGS+=(--memory "${CS_MEMORY}")
 
-# Deliberately unquoted: DOCKER_FLAGS is a user-supplied string of separate docker arguments
+# Deliberately unquoted: CS_DOCKER_FLAGS is a user-supplied string of separate docker arguments
 # (e.g. "-v a:b -v c:d") that has to word-split into one array element each.
 # shellcheck disable=SC2206
-DOCKER_FLAGS=(${DOCKER_FLAGS})
+CS_DOCKER_FLAGS=(${CS_DOCKER_FLAGS})
 if [ -t 0 ] || [ -c /dev/tty ]; then
-    DOCKER_FLAGS+=(-it)
+    CS_DOCKER_FLAGS+=(-it)
 else
-    DOCKER_FLAGS+=(-i)
+    CS_DOCKER_FLAGS+=(-i)
 fi
 
 CS_HOSTS="${HOME}/.claude-sandbox-hosts"
@@ -138,7 +142,7 @@ chmod 644 "${CS_HOSTS}"
 
 
 DOCKER_ARGS=(
-    "${DOCKER_FLAGS[@]}"
+    "${CS_DOCKER_FLAGS[@]}"
     --platform "${PLATFORM}"
     --name "${CONTAINER_NAME}"
     --cap-drop=ALL

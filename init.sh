@@ -109,7 +109,7 @@ export CS_CONTAINER_NAME="$NAME"
 case "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || true)" in
     true)  echo "$NAME is already running" ;;
     false) docker start "$NAME" >/dev/null; echo "restarted $NAME" ;;
-    *)     DOCKER_FLAGS="-d -t ${DOCKER_FLAGS:-}" \
+    *)     CS_DOCKER_FLAGS="-d -t ${CS_DOCKER_FLAGS:-}" \
                /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox "$@" >/dev/null
            echo "started $NAME" ;;
 esac

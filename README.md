@@ -157,7 +157,7 @@ The `plugins/tools/` directory contains ready-made tool packs:
 Built-in plugins are resolved by name regardless of directory, so `PLUGINS=docker` and `PLUGINS=go` both work. The Docker plugin installs only the client; bind-mount the host's Docker socket so the CLI can reach the host daemon:
 
 ```bash
-DOCKER_FLAGS="-v /var/run/docker.sock:/var/run/docker.sock" ./claude-sandbox.sh
+CS_DOCKER_FLAGS="-v /var/run/docker.sock:/var/run/docker.sock" ./claude-sandbox.sh
 ```
 
 Mounting the socket gives the sandbox root on the host (it can start privileged containers), so the launcher prints a warning when it sees one.
@@ -352,6 +352,7 @@ If you previously hand-symlinked the memory directory into a project, drop the s
 |---|---|
 | `CS_IMAGE_REPO` | Image repository, including registry host and namespace (default: `ghcr.io/tartale/claude-sandbox`). Set the same value for `build-image.sh` and the launcher. |
 | `CS_IMAGE_TAG` | Tag of the image to use (default: `local`) |
+| `CS_DOCKER_FLAGS` | Extra arguments for `docker run`, as one string (e.g. `"-v /var/run/docker.sock:/var/run/docker.sock"`). |
 | `CS_CONTAINER_NAME` | Container name (default: `claude-sandbox-<dir>-<random>`; `start.sh` sets `claude-sandbox-<project>`) |
 | `CS_ENV_FILE` | Path to an env file to pass into the container (default: `.env`) |
 | `LANGUAGE_VERSIONS` | Space-separated list of language versions in `<language>-<version>` format (e.g. `"go-1.25.10"`). Each plugin extracts its own entry; omitted plugins default to latest stable. |
@@ -377,7 +378,7 @@ MY_API_KEY=...
 
 The `.env` file follows standard `KEY=VALUE` format. Variables not listed in the file are not passed to the container.
 
-The file is read as data and never run as shell. `$VAR` and `${VAR}` are expanded from your host environment using `envsubst` (macOS: `brew install gettext && brew link --force gettext`; Debian/Ubuntu: `sudo apt-get install gettext-base`), and the result is passed to `docker run --env-file`. Only variables your host exports are expanded, so a literal `$` in a secret is left alone. Command substitution (`$(...)`, backticks) is not run; the launcher warns and passes the text through unchanged. Launcher settings such as `DOCKER_FLAGS` and `CS_*` belong in your shell environment, not in `.env`.
+The file is read as data and never run as shell. `$VAR` and `${VAR}` are expanded from your host environment using `envsubst` (macOS: `brew install gettext && brew link --force gettext`; Debian/Ubuntu: `sudo apt-get install gettext-base`), and the result is passed to `docker run --env-file`. Only variables your host exports are expanded, so a literal `$` in a secret is left alone. Command substitution (`$(...)`, backticks) is not run; the launcher warns and passes the text through unchanged. Launcher settings (`CS_*`) belong in your shell environment, not in `.env`.
 
 The env file, `.envrc` and `.git/hooks` are mounted read-only inside the container, because they run on the host later (when you launch, `cd` with direnv, or commit) and an agent must not be able to plant code in them. Edit them from the host. `.git/config` stays writable, so review `git diff` and `.git/config` before running host-side tooling on a checkout an agent has touched.
 
