@@ -323,7 +323,7 @@ MY_API_KEY=...
 
 The `.env` file follows standard `KEY=VALUE` format. Variables not listed in the file are not passed to the container.
 
-The launcher sources this file as shell on the host, so keep it to plain `KEY=VALUE` lines. The launcher warns when a line contains a command or `$(...)`.
+The file is read as data and never run as shell. `$VAR` and `${VAR}` are expanded from your host environment using `envsubst` (macOS: `brew install gettext && brew link --force gettext`; Debian/Ubuntu: `sudo apt-get install gettext-base`), and the result is passed to `docker run --env-file`. Only variables your host exports are expanded, so a literal `$` in a secret is left alone. Command substitution (`$(...)`, backticks) is not run; the launcher warns and passes the text through unchanged. Launcher settings such as `DOCKER_FLAGS` and `CS_*` belong in your shell environment, not in `.env`.
 
 The env file, `.envrc` and `.git/hooks` are mounted read-only inside the container, because they run on the host later (when you launch, `cd` with direnv, or commit) and an agent must not be able to plant code in them. Edit them from the host. `.git/config` stays writable, so review `git diff` and `.git/config` before running host-side tooling on a checkout an agent has touched.
 

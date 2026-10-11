@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-if [[ "${DEBUG}" == "true" ]]; then trap "set +x" RETURN; set -x; fi
+if [[ "${DEBUG}" == "true" ]]; then set -x; fi
 
 CS_IMAGE_TAG=${CS_IMAGE_TAG:-local}
 CS_IMAGE_REPO="${CS_IMAGE_REPO:-ghcr.io/tartale/claude-sandbox}"
@@ -35,33 +35,34 @@ if [ -n "$PLUGINS" ]; then
 fi
 
 CS_ENV_FILE="${CS_ENV_FILE:-.env}"
-# `source` searches $PATH when the filename has no slash, so make the path absolute.
 case "$CS_ENV_FILE" in
   /*) ;;                                         # already absolute
   *)  CS_ENV_FILE="${PWD}/${CS_ENV_FILE}" ;;
 esac
-ENV_ARGS=()
 if [ -f "$CS_ENV_FILE" ]; then
-    # The file is sourced as shell on the host, and the container can edit it.
-    # Flag anything that is not a plain NAME=value line (line numbers only, so
-    # secrets never reach the terminal).
-    CS_ENV_RISKY=$({ grep -nE '\$\(|`' "$CS_ENV_FILE"
-                     grep -nEv '^[[:space:]]*(#|(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=|$)' "$CS_ENV_FILE"
-                   } | cut -d: -f1 | sort -nu | paste -sd, - || true)
-    if [ -n "$CS_ENV_RISKY" ]; then
-        echo "warning: ${CS_ENV_FILE} is executed as shell on the host; line(s) ${CS_ENV_RISKY} contain commands or substitutions. Review them." >&2
+    if ! command -v envsubst >/dev/null 2>&1; then
+        echo "envsubst is required to read ${CS_ENV_FILE}. Install it with:" >&2
+        echo "  macOS:          brew install gettext && brew link --force gettext" >&2
+        echo "  Debian/Ubuntu:  sudo apt-get install gettext-base" >&2
+        exit 1
     fi
-    set -a
-    # shellcheck source=/dev/null
-    source "$CS_ENV_FILE"
-    set +a
-    while IFS='=' read -r key _; do
-        ENV_ARGS+=(-e "$key")
-    done < <(grep -Ev '^\s*(#|$)' "$CS_ENV_FILE" | sed 's/^export //')
+    CS_ENV_COMMANDS=$(grep -nE '\$\(|`' "$CS_ENV_FILE" | cut -d: -f1 | paste -sd, - || true)
+    if [ -n "$CS_ENV_COMMANDS" ]; then
+        echo "warning: ${CS_ENV_FILE} line(s) ${CS_ENV_COMMANDS} use command substitution, which is not run; the text is passed through literally." >&2
+    fi
 fi
 
-# Files the user later runs on the host (git hooks, direnv, the env file that
-# is sourced above) are mounted read-only so the agent cannot plant code in them.
+# The env file is data, never shell: $VAR and \${VAR} are expanded from the host
+# environment (only names the host actually exports, so a literal $ in a secret
+# survives) and nothing in it is executed.
+expand_env_file() {
+    [ -f "$CS_ENV_FILE" ] || return 0
+    # shellcheck disable=SC2046
+    envsubst "$(printf '${%s} ' $(compgen -e))" < "$CS_ENV_FILE"
+}
+
+# Files the user later runs on the host (git hooks, direnv, the env file)
+# are mounted read-only so the agent cannot plant code in them.
 # Only paths that already exist are mounted; Docker would otherwise create them
 # as empty directories on the host.
 PROTECT_ARGS=()
@@ -70,9 +71,6 @@ PROTECT_ARGS=()
 case "$CS_ENV_FILE" in
   "$(pwd)"/*) [ -f "$CS_ENV_FILE" ] && PROTECT_ARGS+=(-v "$CS_ENV_FILE:/workspace/${CS_ENV_FILE#"$(pwd)"/}:ro") ;;
 esac
-
-# something in the if block unsets '-x'; reset it if needed
-if [[ "${DEBUG}" == "true" ]]; then set -x; fi
 
 # Every project is mounted at /workspace, so Claude Code derives the same
 # project key ("-workspace") for all of them and piles every project's
@@ -147,7 +145,6 @@ DOCKER_ARGS=(
     --cap-add=CHOWN --cap-add=DAC_OVERRIDE --cap-add=FOWNER --cap-add=SETUID --cap-add=SETGID
     --security-opt=no-new-privileges
     "${LIMIT_ARGS[@]}"
-    "${ENV_ARGS[@]}"
     -e CUID="$(id -u)"
     -e CGID="$(id -g)"
     -e CMASK="$(umask)"
@@ -162,12 +159,11 @@ DOCKER_ARGS=(
     "${DOCKER_LOGIN_ARGS[@]}"
     -v "${HOME}/.gitconfig:/home/claude/.gitconfig:ro"
     -v "${CS_HOSTS}:/etc/hosts:ro"
-    "${CS_IMAGE}" "$@"
 )
 
 # When piped (e.g. curl | bash), stdin is not a TTY but /dev/tty still
 # gives us access to the terminal — route docker's stdin through it.
 if ! [ -t 0 ] && [ -c /dev/tty ]; then
-    exec docker run "${DOCKER_ARGS[@]}" </dev/tty
+    exec docker run "${DOCKER_ARGS[@]}" --env-file <(expand_env_file) "${CS_IMAGE}" "$@" </dev/tty
 fi
-exec docker run "${DOCKER_ARGS[@]}"
+exec docker run "${DOCKER_ARGS[@]}" --env-file <(expand_env_file) "${CS_IMAGE}" "$@"
