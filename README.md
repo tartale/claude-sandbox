@@ -39,6 +39,37 @@ To use a language-pinned image:
 CS_IMAGE_TAG=go-1.25.10 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)"
 ```
 
+## Setting up a project
+
+Run this from a project's root, on your host (not inside a sandbox), to set the project up for the sandbox:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/init.sh)"
+```
+
+It:
+
+- creates `.claude/sandbox/build.sh` and `.claude/sandbox/plugin.sh` stubs (existing files are kept). `plugin.sh` is where the project's plugins and packages go; `build.sh` builds the project's image from it, and prints the `CS_IMAGE_TAG` to launch with.
+- checks that `envsubst` is installed (needed to read `.env`).
+- opens GitHub's token page with a single-repo fine-grained token pre-filled (Contents, Pull requests and Issues read/write), validates the token you paste (no Administration, can push, no other private repos), and writes `CS_GITHUB_TOKEN` to `.env` at mode 600, excluded from git locally.
+
+Options go after a placeholder name for the script, for example:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/init.sh)" init --registry --ruleset
+```
+
+(or pass them directly when running a checkout of `init.sh`):
+
+| Option | Effect |
+|---|---|
+| `--repo OWNER/NAME` | Repository to scope the token to (default: the `origin` remote) |
+| `--env-file FILE` | Env file to write the token to (default: `.env`) |
+| `--registry` | Stores a `write:packages` login for `ghcr.io` in a dedicated docker config (`~/.docker-sandbox`, override with `CS_SANDBOX_DOCKER_CONFIG`), so `CS_DOCKER_LOGIN` shares only that login and not your other registry logins. Prints the launch line and the steps to give the repo access to the package after the first push. |
+| `--ruleset` | Creates a `main` branch ruleset (PR required, no force-push or deletion, no bypass). Needs `gh` logged in as a repo admin. |
+
+GitHub cannot create tokens through its API, so the token itself is created in the browser; the script checks it afterwards. It can verify that the token has push access and no Administration permission, but not that Workflows is off, so confirm that on the token page.
+
 ## Building a custom image
 
 To build a custom image with plugins, run this one-liner — no repo checkout needed:
