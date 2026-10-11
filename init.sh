@@ -11,7 +11,7 @@ usage() {
 init.sh [--repo OWNER/NAME] [--registry] [--ruleset] [--env-file FILE]
 
 Always:
-  - creates .claude/sandbox/build.sh and plugin.sh stubs (existing files are kept)
+  - creates .claude/sandbox/{build,run,start}.sh and plugin.sh stubs (existing files are kept)
   - checks envsubst, walks you through a single-repo fine-grained PAT, validates
     it, and writes CS_GITHUB_TOKEN to the env file (mode 600, git-excluded)
 --registry  store a package-only login for ghcr.io in a DEDICATED docker config
@@ -75,7 +75,7 @@ write_stub() {   # path mode, content on stdin
 write_stub .claude/sandbox/build.sh 755 <<'EOF2'
 #!/usr/bin/env bash
 # Builds this project's sandbox image from plugin.sh. Usage: .claude/sandbox/build.sh
-# Then start it with: CS_IMAGE_TAG=@TAG@ claude-sandbox.sh
+# Then start it with run.sh or start.sh in this directory.
 set -euo pipefail
 
 THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -84,6 +84,37 @@ export PLUGINS="${THIS_SCRIPT_DIR}/plugin.sh"
 export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
 
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+EOF2
+write_stub .claude/sandbox/run.sh 755 <<'EOF2'
+#!/usr/bin/env bash
+# Starts this project's sandbox interactively. Usage: .claude/sandbox/run.sh [claude args]
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
+
+exec /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox "$@"
+EOF2
+write_stub .claude/sandbox/start.sh 755 <<'EOF2'
+#!/usr/bin/env bash
+# Starts this project's sandbox in the background; claude waits on a detached tty.
+# Usage: .claude/sandbox/start.sh [claude args]
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
+NAME="${CS_CONTAINER_NAME:-claude-sandbox-$(basename "$PWD" | tr -c 'A-Za-z0-9_.\n-' '-')}"
+export CS_CONTAINER_NAME="$NAME"
+
+case "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || true)" in
+    true)  echo "$NAME is already running" ;;
+    false) docker start "$NAME" >/dev/null; echo "restarted $NAME" ;;
+    *)     DOCKER_FLAGS="-d -t ${DOCKER_FLAGS:-}" \
+               /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox "$@" >/dev/null
+           echo "started $NAME" ;;
+esac
+echo "attach: docker attach $NAME   (detach with ctrl-p ctrl-q)"
+echo "stop:   docker stop $NAME"
 EOF2
 write_stub .claude/sandbox/plugin.sh 644 <<'EOF2'
 #!/usr/bin/env bash
@@ -108,9 +139,12 @@ GitHub cannot create tokens through its API, so do this in the browser:
   - Permissions: Contents RW, Pull requests RW, Issues RW (pre-filled). Leave
     Administration, Workflows and Actions off.
   - Expiration: 90 days or less.
-Opening: $URL
+  - Copy the token when GitHub shows it, then come back here and paste it.
+
+Token page: $URL
 EOF
-(command -v open >/dev/null && open "$URL") || (command -v xdg-open >/dev/null && xdg-open "$URL") || true
+read -r -p "Press Enter to open the token page in your browser (Ctrl-C to stop)... " _
+(command -v open >/dev/null && open "$URL") || (command -v xdg-open >/dev/null && xdg-open "$URL") || echo "(could not open a browser; use the link above)"
 
 read -r -s -p "Paste the token (input hidden; blank keeps the current one): " TOKEN; echo
 if [ -n "$TOKEN" ]; then

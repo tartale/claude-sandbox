@@ -15,28 +15,48 @@ The container runs as a user matching your host UID and GID, so files written to
 
 ## Usage
 
+Set the project up once (see [Setting up a project](#setting-up-a-project)); that creates the scripts below in `.claude/sandbox/`. Then, from anywhere in the project:
+
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)"
+.claude/sandbox/run.sh      # interactive: Claude Code starts in the container in your terminal
+.claude/sandbox/start.sh    # background: the container runs detached, Claude waits on its tty
 ```
 
-Run this from any project directory. Claude Code will start inside a container with that directory as `/workspace`. The launcher uses the image `ghcr.io/tartale/claude-sandbox:local` (override with `CS_IMAGE_TAG` and `CS_IMAGE_REPO`). Docker pulls it if it exists in the registry; otherwise build it first, for example `CS_IMAGE_TAG=local` with the [`build-image.sh`](#building-a-custom-image) one-liner below. Published release images (`:latest`, language tags) reflect the last tagged release, not the latest `main`.
+Claude Code starts inside a container with the project directory as `/workspace`. The launcher uses the image `ghcr.io/tartale/claude-sandbox:<tag>` (the tag defaults to the project name; override with `CS_IMAGE_TAG` and `CS_IMAGE_REPO`). Docker pulls it if it exists in the registry; otherwise build it first with `.claude/sandbox/build.sh`. Published release images (`:latest`, language tags) reflect the last tagged release, not the latest `main`.
+
+`start.sh` names the container `claude-sandbox-<project>` (override with `CS_CONTAINER_NAME`; `claude-sandbox.sh` otherwise appends a random suffix). It prints how to reach it:
+
+```bash
+docker attach claude-sandbox-<project>   # detach again with ctrl-p ctrl-q
+docker stop claude-sandbox-<project>
+```
+
+If the container already exists, `start.sh` reuses it instead of creating another.
 
 ### Passing arguments to Claude
 
-Use the pipe form with `-s --` to forward arguments to `claude`:
+Both scripts forward their arguments to `claude`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh | bash -s -- --resume
+.claude/sandbox/run.sh --continue   # or --resume, or any other claude flag
 ```
 
-Any flags after `--` are passed directly to the `claude` invocation inside the container.
+For `start.sh` the arguments apply when the container is created; if it already exists it is reused as it was started.
 
 ### Using a specific image tag
 
 To use a language-pinned image:
 
 ```bash
-CS_IMAGE_TAG=go-1.25.10 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)"
+CS_IMAGE_TAG=go-1.25.10 .claude/sandbox/run.sh
+```
+
+### Without a project setup
+
+`claude-sandbox.sh` is what the stubs wrap; it can be run directly from any directory:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)"
 ```
 
 ## Setting up a project
@@ -49,9 +69,9 @@ Run this from a project's root, on your host (not inside a sandbox), to set the 
 
 It:
 
-- creates `.claude/sandbox/build.sh` and `.claude/sandbox/plugin.sh` stubs (existing files are kept). `plugin.sh` is where the project's plugins and packages go; `build.sh` builds the project's image from it, and prints the `CS_IMAGE_TAG` to launch with.
+- creates `.claude/sandbox/` stubs (existing files are kept): `plugin.sh` is where the project's plugins and packages go; `build.sh` builds the project's image from it; `run.sh` starts the sandbox interactively; `start.sh` starts it in the background. They wrap the `build-image.sh` and `claude-sandbox.sh` one-liners, and use the repo name as the image tag.
 - checks that `envsubst` is installed (needed to read `.env`).
-- opens GitHub's token page with a single-repo fine-grained token pre-filled (Contents, Pull requests and Issues read/write), validates the token you paste (no Administration, can push, no other private repos), and writes `CS_GITHUB_TOKEN` to `.env` at mode 600, excluded from git locally.
+- opens GitHub's token page with a single-repo fine-grained token pre-filled (Contents, Pull requests and Issues read/write), validates the token you paste (press Enter to skip the token step) (no Administration, can push, no other private repos), and writes `CS_GITHUB_TOKEN` to `.env` at mode 600, excluded from git locally.
 
 Options go after a placeholder name for the script, for example:
 
@@ -72,7 +92,7 @@ GitHub cannot create tokens through its API, so the token itself is created in t
 
 ## Building a custom image
 
-To build a custom image with plugins, run this one-liner — no repo checkout needed:
+Put the project's plugins in `.claude/sandbox/plugin.sh`, then run `.claude/sandbox/build.sh`. It builds the project image and pushes it to `CS_IMAGE_REPO:CS_IMAGE_TAG`; `run.sh` and `start.sh` use the same tag. The stub wraps the `build-image.sh` one-liner, which also works on its own, with no repo checkout:
 
 ```bash
 CS_IMAGE_TAG=my-sandbox /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
@@ -81,8 +101,10 @@ CS_IMAGE_TAG=my-sandbox /bin/bash -c "$(curl -fsSL https://raw.githubusercontent
 Then launch it by setting `CS_IMAGE_TAG` to match:
 
 ```bash
-CS_IMAGE_TAG=my-sandbox /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)"
+CS_IMAGE_TAG=my-sandbox .claude/sandbox/run.sh
 ```
+
+The examples below call `build-image.sh` directly to show its environment variables.
 
 ### Build environment variables
 
@@ -330,6 +352,7 @@ If you previously hand-symlinked the memory directory into a project, drop the s
 |---|---|
 | `CS_IMAGE_REPO` | Image repository, including registry host and namespace (default: `ghcr.io/tartale/claude-sandbox`). Set the same value for `build-image.sh` and the launcher. |
 | `CS_IMAGE_TAG` | Tag of the image to use (default: `local`) |
+| `CS_CONTAINER_NAME` | Container name (default: `claude-sandbox-<dir>-<random>`; `start.sh` sets `claude-sandbox-<project>`) |
 | `CS_ENV_FILE` | Path to an env file to pass into the container (default: `.env`) |
 | `LANGUAGE_VERSIONS` | Space-separated list of language versions in `<language>-<version>` format (e.g. `"go-1.25.10"`). Each plugin extracts its own entry; omitted plugins default to latest stable. |
 | `PLUGINS` | Path to a plugin script or directory of plugin scripts to install |
@@ -361,7 +384,7 @@ The env file, `.envrc` and `.git/hooks` are mounted read-only inside the contain
 To use a different file name, set `CS_ENV_FILE`:
 
 ```bash
-CS_ENV_FILE=.env.sandbox /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)"
+CS_ENV_FILE=.env.sandbox .claude/sandbox/run.sh
 ```
 
 ## License
