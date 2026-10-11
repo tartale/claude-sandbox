@@ -113,10 +113,6 @@ if [ "${CS_DOCKER_LOGIN}" = "true" ]; then
     DOCKER_LOGIN_ARGS=(-v "${CS_DOCKER_CONFIG}:/home/claude/.docker/config.json:ro")
 fi
 
-if [ -n "${DOCKER_FLAGS:-}" ] && [ -z "${CS_DOCKER_FLAGS:-}" ]; then
-    echo "warning: DOCKER_FLAGS is no longer read; rename it to CS_DOCKER_FLAGS." >&2
-fi
-
 case "${CS_DOCKER_FLAGS}" in
     *docker.sock*)
         echo "warning: the Docker socket is mounted; anything in the sandbox can start privileged containers and has root on this host." >&2 ;;
