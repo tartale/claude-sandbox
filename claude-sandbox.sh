@@ -89,7 +89,17 @@ mkdir -p "${CS_PROJECT_MEMORY}"
 
 # User-scope rules and memories: a private git repo, cloned on each machine.
 USER_CONFIG_ARGS=()
-if [ -n "${CS_USER_CONFIG}" ]; then
+if [ -n "${CS_USER_CONFIG_REPO}" ] || [ -n "${CS_USER_CONFIG_TOKEN}" ]; then
+    if [ -z "${CS_USER_CONFIG_REPO}" ] || [ -z "${CS_USER_CONFIG_TOKEN}" ]; then
+        echo "CS_USER_CONFIG_REPO and CS_USER_CONFIG_TOKEN must be set together" >&2
+        exit 1
+    fi
+    if [ -n "${CS_USER_CONFIG}" ]; then
+        echo "set either CS_USER_CONFIG (mount a checkout) or CS_USER_CONFIG_REPO (clone read-only), not both" >&2
+        exit 1
+    fi
+    USER_CONFIG_ARGS=(-e CS_USER_CONFIG_REPO -e CS_USER_CONFIG_TOKEN)
+elif [ -n "${CS_USER_CONFIG}" ]; then
     if [ ! -d "${CS_USER_CONFIG}" ]; then
         echo "CS_USER_CONFIG=${CS_USER_CONFIG} does not exist; clone the user config repo there" >&2
         exit 1

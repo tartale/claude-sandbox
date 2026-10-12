@@ -3,9 +3,10 @@
 #
 #   project scope -> /workspace/.claude/        committed with the project, so
 #                                               it travels via git pull
-#   user scope    -> /home/claude/.claude-user  a private repo bind-mounted from
-#                                               the host, so it follows the user
-#                                               between machines
+#   user scope    -> /home/claude/.claude-user  a private repo, bind-mounted
+#                                               from the host or cloned read-only,
+#                                               so it follows the user between
+#                                               machines
 #
 # Claude Code only knows about one memory directory per project; that one is
 # wired to the project scope (claude-sandbox.sh bind-mounts it). The user scope
@@ -75,8 +76,8 @@ machine brings them along.
 ## User scope — `/home/claude/.claude-user/`
 
 Facts about *the user*: who they are, how they want you to work, preferences
-that hold no matter which repo is open. A private git repo bind-mounted from
-the host, pulled at the start of every session.
+that hold no matter which repo is open. A private git repo, current as of the
+start of this session.
 
 - Memories: `/home/claude/.claude-user/memory/`, indexed by
   `/home/claude/.claude-user/memory/MEMORY.md`.
@@ -112,7 +113,8 @@ HEADER
         fi
     else
         printf '\n---\n\n**No user scope is mounted.** '
-        printf 'Set `CS_USER_CONFIG` to a checkout of the user config repo to '
+        printf 'Set `CS_USER_CONFIG` to a checkout of the user config repo, or '
+        printf '`CS_USER_CONFIG_REPO` and `CS_USER_CONFIG_TOKEN`, to '
         printf 'enable it; until then, keep user-scope facts out of the '
         printf 'project memory directory.\n'
     fi
