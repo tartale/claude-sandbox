@@ -9,6 +9,9 @@ LANGUAGES = $(patsubst plugins/languages/%.sh,%,$(wildcard plugins/languages/*.s
 CLAUDE_VERSION ?= $(shell npm view @anthropic-ai/claude-code version 2>/dev/null || echo latest)
 CLAUDE_VERSION_ARG = --build-arg CLAUDE_VERSION=$(CLAUDE_VERSION)
 
+test:
+	for t in tests/*.sh; do bash $$t || exit 1; done
+
 clean:
 	docker rmi $(CS_IMAGE) 2>/dev/null || true
 	rm -rf plugins/.build
@@ -48,4 +51,4 @@ tags-base:
 tags-languages:
 	./tag-images.sh languages
 
-.PHONY: all clean image pull push stage-plugins tags tags-base tags-languages
+.PHONY: all clean test image pull push stage-plugins tags tags-base tags-languages
