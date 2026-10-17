@@ -26,7 +26,8 @@ if [ -z "$(git remote)" ]; then
     mkdir -p "$(dirname "${patch}")"
     git format-patch --stdout refs/sandbox/base..HEAD > "${patch}"
     if [ -s "${patch}" ]; then
-        echo "read-only user config: wrote ${patch}; review it and apply with 'git am' in your claude-user checkout"
+        echo "read-only user config: wrote ${patch}. Review it, then apply it from your claude-user checkout on the host:"
+        echo "      git am < <project>/.tmp/claude-user.patch"
     else
         echo "user config already up to date"
     fi

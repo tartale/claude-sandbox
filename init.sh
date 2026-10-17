@@ -36,6 +36,7 @@ fi
 say()  { printf '\n%s%s%s\n' "${BOLD}${CYAN}" "$*" "${RESET}"; }
 ok()   { printf '  %s✓%s %s\n' "${GREEN}" "${RESET}" "$*"; }
 warn() { printf '  %s!%s %s\n' "${YELLOW}" "${RESET}" "$*"; }
+cmd()  { printf '      %s%s%s\n' "${BOLD}" "$*" "${RESET}"; }   # a command or URL alone on its line, to copy
 note() { printf '  %s%s%s\n' "${DIM}" "$*" "${RESET}"; }
 die()  { printf '%serror:%s %s\n' "${RED}${BOLD}" "${RESET}" "$*" >&2; exit 1; }
 # ask_def PROMPT Y|N -- yes/no question; Enter picks the default, which the prompt shows.
@@ -93,15 +94,20 @@ if command -v envsubst >/dev/null; then
     ok "envsubst"
 else
     warn "envsubst missing (the launcher needs it to read $ENV_FILE)"
-    note "macOS:          brew install gettext && brew link --force gettext"
-    note "Debian/Ubuntu:  sudo apt-get install gettext-base"
+    note "macOS:"
+    cmd "brew install gettext && brew link --force gettext"
+    note "Debian/Ubuntu:"
+    cmd "sudo apt-get install gettext-base"
 fi
 if command -v gh >/dev/null; then
     ok "gh"
 else
     warn "gh missing (needed for the branch ruleset)"
-    note "macOS:          brew install gh"
-    note "Debian/Ubuntu:  sudo apt-get install gh   (or see https://cli.github.com)"
+    note "macOS:"
+    cmd "brew install gh"
+    note "Debian/Ubuntu:"
+    cmd "sudo apt-get install gh"
+    note "other systems: https://cli.github.com"
 fi
 
 REPO=$(git remote get-url origin 2>/dev/null | sed -E 's#^(git@github.com:|https://github.com/)##; s#\.git$##') || true
@@ -135,12 +141,22 @@ HAVE_GH=0; command -v gh >/dev/null && HAVE_GH=1
 RULESET_DEFAULT=Y; RULESET_NOTE=""
 if [ "$HAVE_GH" = 0 ]; then
     RULESET_NOTE=" (requires 'gh' - not installed)"
-elif gh api "repos/$REPO/rulesets" --jq '.[].name' 2>/dev/null | grep -qx main; then
-    RULESET_DEFAULT=N; RULESET_NOTE=" (a 'main' ruleset already exists)"
+elif REPO_INFO=$(gh api "repos/$REPO" --jq '[.private, .permissions.admin] | @tsv' 2>/dev/null); then
+    # Rulesets need admin on the repo, and private repos need a paid plan (the plan
+    # itself is not reliably readable, so a private repo only gets a warning).
+    if [ "${REPO_INFO##*$'\t'}" != true ]; then
+        RULESET_DEFAULT=N; RULESET_NOTE=" (you are not an admin of $REPO)"
+    elif gh api "repos/$REPO/rulesets" --jq '.[].name' 2>/dev/null | grep -qx main; then
+        RULESET_DEFAULT=N; RULESET_NOTE=" (a 'main' ruleset already exists)"
+    elif [ "${REPO_INFO%%$'\t'*}" = true ]; then
+        RULESET_DEFAULT=N; RULESET_NOTE=" (private repo: needs a paid GitHub plan; may fail)"
+    fi
+else
+    RULESET_NOTE=" (could not read $REPO with gh; it may need 'gh auth login')"
 fi
 if ask_def "  Create a 'main' ruleset on $REPO?$RULESET_NOTE" "$RULESET_DEFAULT"; then
-    [ "$HAVE_GH" = 1 ] || die "install gh (see above), then rerun"
-    gh auth status >/dev/null 2>&1 || die "run 'gh auth login' as a repo admin first"
+    [ "$HAVE_GH" = 1 ] || die "install gh (commands above), then rerun"
+    gh auth status >/dev/null 2>&1 || die $'sign in to gh as a repo admin, then rerun:\n\n      gh auth login'
     DO_RULESET=1
 fi
 
@@ -232,7 +248,7 @@ add_setting CS_USER_CONFIG "" 0 "Path to your user-config checkout (user-scope r
 add_setting CS_DOCKER_FLAGS "" 0 "Extra docker run flags, e.g. \"-v /host/path:/container/path\"."
 add_setting CS_PIDS_LIMIT "" 0 "Maximum number of processes in the container."
 add_setting CS_MEMORY "" 0 "Container memory limit, e.g. 8g."
-if command -v direnv >/dev/null; then note "run: direnv allow"; else note "direnv not installed; export these in your shell instead"; fi
+if command -v direnv >/dev/null; then note "to load them:"; cmd "direnv allow"; else note "direnv not installed; export these in your shell instead"; fi
 
 # --- fine-grained PAT for git and gh -----------------------------------------
 if [ "$DO_TOKEN" = 1 ]; then
@@ -281,7 +297,8 @@ fi
 # --- GHCR login in a dedicated docker config ---------------------------------
 if [ "$DO_REGISTRY" = 1 ]; then
     say "Registry login (ghcr.io)"
-    note "Classic token, ONLY write:packages: https://github.com/settings/tokens/new?scopes=write:packages&description=cs-ghcr"
+    note "Classic token, ONLY write:packages:"
+    cmd "https://github.com/settings/tokens/new?scopes=write:packages&description=cs-ghcr"
     read -r -p "  GitHub username: " GHUSER
     read -r -s -p "  Classic token (hidden): " CT; echo
     case "$CT" in ghp_*) ;; *) die "expected a classic token (ghp_...)" ;; esac
@@ -297,9 +314,11 @@ if [ "$DO_REGISTRY" = 1 ]; then
       printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$(printf '%s:%s' "$GHUSER" "$CT" | base64 | tr -d '\n')" > "$DOCKER_DIR/config.json" )
     unset CT H
     ok "stored in $DOCKER_DIR"
-    note "launch with: DOCKER_CONFIG=$DOCKER_DIR CS_DOCKER_LOGIN=true claude-sandbox.sh  (shell env, not $ENV_FILE)"
+    note "launch with the login (set these in your shell, not $ENV_FILE):"
+    cmd "DOCKER_CONFIG=$DOCKER_DIR CS_DOCKER_LOGIN=true .claude/sandbox/run.sh"
     note "after the first push: package settings -> Manage Actions access -> add $REPO (Write)"
-    note "Dockerfile: LABEL org.opencontainers.image.source=\"https://github.com/$REPO\" links the package to the repo"
+    note "to link the package to the repo, add this to the Dockerfile:"
+    cmd "LABEL org.opencontainers.image.source=\"https://github.com/$REPO\""
 fi
 
 # --- branch ruleset ----------------------------------------------------------
@@ -308,7 +327,7 @@ if [ "$DO_RULESET" = 1 ]; then
     if gh api "repos/$REPO/rulesets" --jq '.[].name' | grep -qx main; then
         note "ruleset 'main' already exists; left alone"
     else
-        gh api -X POST "repos/$REPO/rulesets" --input - >/dev/null <<'JSON'
+        if RULESET_ERR=$(gh api -X POST "repos/$REPO/rulesets" --input - 2>&1 >/dev/null <<'JSON'
 {"name":"main","target":"branch","enforcement":"active","bypass_actors":[],
  "conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]}},
  "rules":[{"type":"deletion"},{"type":"non_fast_forward"},
@@ -316,9 +335,15 @@ if [ "$DO_RULESET" = 1 ]; then
    "dismiss_stale_reviews_on_push":false,"require_code_owner_review":false,
    "require_last_push_approval":false,"required_review_thread_resolution":false}}]}
 JSON
-        ok "ruleset created (add required status checks once CI exists)"
+        ); then
+            ok "ruleset created (add required status checks once CI exists)"
+        else
+            warn "GitHub refused to create the ruleset; everything else is done"
+            note "$(printf '%s' "$RULESET_ERR" | head -n 2)"
+        fi
     fi
 fi
 
 say "Done"
-note "Start with .claude/sandbox/run.sh"
+note "Start the sandbox with:"
+cmd ".claude/sandbox/run.sh"
