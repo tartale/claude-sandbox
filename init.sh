@@ -165,23 +165,25 @@ EOF2
 # Add any CS_ launcher variable that .envrc does not mention yet, with its default;
 # variables whose default is "unset" go in commented out.
 say "Launcher settings in .envrc"
-add_setting() {   # NAME VALUE ACTIVE(1|0)
+add_setting() {   # NAME VALUE ACTIVE(1|0) COMMENT
     if [ -f .envrc ] && grep -qE "^[[:space:]]*#?[[:space:]]*(export[[:space:]]+)?$1=" .envrc; then
         note "kept    $1"
         return
     fi
+    [ -s .envrc ] && echo >> .envrc
+    printf '# %s\n' "$4" >> .envrc
     if [ "$3" = 1 ]; then printf 'export %s=%s\n' "$1" "$2" >> .envrc
     else printf '# export %s=%s\n' "$1" "$2" >> .envrc; fi
     ok "added   $1"
 }
-add_setting CS_IMAGE_REPO ghcr.io/tartale/claude-sandbox 1
-add_setting CS_IMAGE_TAG "$IMAGE_TAG" 1
-add_setting CS_ENV_FILE "$ENV_FILE" 1
-add_setting CS_DOCKER_LOGIN false 1
-add_setting CS_USER_CONFIG "" 0
-add_setting CS_DOCKER_FLAGS "" 0
-add_setting CS_PIDS_LIMIT "" 0
-add_setting CS_MEMORY "" 0
+add_setting CS_IMAGE_REPO ghcr.io/tartale/claude-sandbox 1 "Image repository, including registry host and namespace."
+add_setting CS_IMAGE_TAG "$IMAGE_TAG" 1 "Tag of this project's sandbox image."
+add_setting CS_ENV_FILE "$ENV_FILE" 1 "Env file passed into the container."
+add_setting CS_DOCKER_LOGIN false 1 "true mounts your docker registry logins (read-only) into the container."
+add_setting CS_USER_CONFIG "" 0 "Path to your user-config checkout (user-scope rules and memories)."
+add_setting CS_DOCKER_FLAGS "" 0 "Extra docker run flags, e.g. \"-v /host/path:/container/path\"."
+add_setting CS_PIDS_LIMIT "" 0 "Maximum number of processes in the container."
+add_setting CS_MEMORY "" 0 "Container memory limit, e.g. 8g."
 if command -v direnv >/dev/null; then note "run: direnv allow"; else note "direnv not installed; export these in your shell instead"; fi
 
 # --- fine-grained PAT for git and gh -----------------------------------------
@@ -226,8 +228,12 @@ if [ "$DO_TOKEN" = 1 ]; then
         ( umask 077
           touch "$ENV_FILE"
           tmp=$(mktemp)
-          grep -v '^CS_GITHUB_TOKEN=' "$ENV_FILE" > "$tmp" || true
-          printf 'CS_GITHUB_TOKEN=%s\n' "$TOKEN" >> "$tmp"
+          env_comment="# Fine-grained GitHub token, limited to $REPO (git and gh in the sandbox)."
+          # Drop any earlier entry and its comment, plus trailing blank lines, then append.
+          grep -vxF -e "$env_comment" "$ENV_FILE" | grep -v '^CS_GITHUB_TOKEN=' \
+              | awk '{ l[NR] = $0 } /./ { n = NR } END { for (i = 1; i <= n; i++) print l[i] }' > "$tmp" || true
+          [ -s "$tmp" ] && echo >> "$tmp"
+          printf '%s\nCS_GITHUB_TOKEN=%s\n' "$env_comment" "$TOKEN" >> "$tmp"
           cat "$tmp" > "$ENV_FILE"; rm -f "$tmp" )
         chmod 600 "$ENV_FILE"
         if git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q "$ENV_FILE"; then
