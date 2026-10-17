@@ -144,8 +144,7 @@ case "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || true)" in
                /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox "$@" >/dev/null
            echo "started $NAME" ;;
 esac
-echo "attach: docker attach $NAME   (detach with ctrl-p ctrl-q)"
-echo "stop:   docker stop $NAME"
+printf '\nAttach (detach with ctrl-p ctrl-q):\n\ndocker attach %s\n\nStop:\n\ndocker stop %s\n' "$NAME" "$NAME"
 EOF2
 write_stub .claude/sandbox/plugin.sh 644 <<'EOF2'
 #!/usr/bin/env bash
