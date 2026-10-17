@@ -24,11 +24,11 @@ Set the project up once (see [Setting up a project](#setting-up-a-project)); tha
 
 Claude Code starts inside a container with the project directory as `/workspace`. The launcher uses the image `ghcr.io/tartale/claude-sandbox:<tag>` (the tag defaults to the project name; override with `CS_IMAGE_TAG` and `CS_IMAGE_REPO`). Docker pulls it if it exists in the registry; otherwise build it first with `.claude/sandbox/build.sh`. Published release images (`:latest`, language tags) reflect the last tagged release, not the latest `main`.
 
-`start.sh` names the container `claude-sandbox-<project>` (override with `CS_CONTAINER_NAME`; `claude-sandbox.sh` otherwise appends a random suffix). It prints how to reach it:
+`start.sh` names the container `cs-<repo-name>` (override with `CS_CONTAINER_NAME`; `claude-sandbox.sh` otherwise appends a random suffix). It prints how to reach it:
 
 ```bash
-docker attach claude-sandbox-<project>   # detach again with ctrl-p ctrl-q
-docker stop claude-sandbox-<project>
+docker attach cs-<repo-name>   # detach again with ctrl-p ctrl-q
+docker stop cs-<repo-name>
 ```
 
 If the container already exists, `start.sh` reuses it instead of creating another.
@@ -367,7 +367,7 @@ If you previously hand-symlinked the memory directory into a project, drop the s
 | `CS_IMAGE_REPO` | Image repository, including registry host and namespace (default: `ghcr.io/tartale/claude-sandbox`). Set the same value for `build-image.sh` and the launcher. |
 | `CS_IMAGE_TAG` | Tag of the image to use (default: `local`) |
 | `CS_DOCKER_FLAGS` | Extra arguments for `docker run`, as one string (e.g. `"-v /var/run/docker.sock:/var/run/docker.sock"`). |
-| `CS_CONTAINER_NAME` | Container name (default: `claude-sandbox-<dir>-<random>`; `start.sh` sets `claude-sandbox-<project>`) |
+| `CS_CONTAINER_NAME` | Container name (default: `claude-sandbox-<dir>-<random>`; `start.sh` sets `cs-<repo-name>`) |
 | `CS_ENV_FILE` | Path to an env file to pass into the container (default: `.env`) |
 | `LANGUAGE_VERSIONS` | Space-separated list of language versions in `<language>-<version>` format (e.g. `"go-1.25.10"`). Each plugin extracts its own entry; omitted plugins default to latest stable. |
 | `PLUGINS` | Path to a plugin script or directory of plugin scripts to install |
