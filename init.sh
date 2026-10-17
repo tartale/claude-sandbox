@@ -141,8 +141,18 @@ HAVE_GH=0; command -v gh >/dev/null && HAVE_GH=1
 RULESET_DEFAULT=Y; RULESET_NOTE=""
 if [ "$HAVE_GH" = 0 ]; then
     RULESET_NOTE=" (requires 'gh' - not installed)"
-elif gh api "repos/$REPO/rulesets" --jq '.[].name' 2>/dev/null | grep -qx main; then
-    RULESET_DEFAULT=N; RULESET_NOTE=" (a 'main' ruleset already exists)"
+elif REPO_INFO=$(gh api "repos/$REPO" --jq '[.private, .permissions.admin] | @tsv' 2>/dev/null); then
+    # Rulesets need admin on the repo, and private repos need a paid plan (the plan
+    # itself is not reliably readable, so a private repo only gets a warning).
+    if [ "${REPO_INFO##*$'\t'}" != true ]; then
+        RULESET_DEFAULT=N; RULESET_NOTE=" (you are not an admin of $REPO)"
+    elif gh api "repos/$REPO/rulesets" --jq '.[].name' 2>/dev/null | grep -qx main; then
+        RULESET_DEFAULT=N; RULESET_NOTE=" (a 'main' ruleset already exists)"
+    elif [ "${REPO_INFO%%$'\t'*}" = true ]; then
+        RULESET_DEFAULT=N; RULESET_NOTE=" (private repo: needs a paid GitHub plan; may fail)"
+    fi
+else
+    RULESET_NOTE=" (could not read $REPO with gh; it may need 'gh auth login')"
 fi
 if ask_def "  Create a 'main' ruleset on $REPO?$RULESET_NOTE" "$RULESET_DEFAULT"; then
     [ "$HAVE_GH" = 1 ] || die "install gh (commands above), then rerun"
@@ -317,7 +327,7 @@ if [ "$DO_RULESET" = 1 ]; then
     if gh api "repos/$REPO/rulesets" --jq '.[].name' | grep -qx main; then
         note "ruleset 'main' already exists; left alone"
     else
-        gh api -X POST "repos/$REPO/rulesets" --input - >/dev/null <<'JSON'
+        if RULESET_ERR=$(gh api -X POST "repos/$REPO/rulesets" --input - 2>&1 >/dev/null <<'JSON'
 {"name":"main","target":"branch","enforcement":"active","bypass_actors":[],
  "conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]}},
  "rules":[{"type":"deletion"},{"type":"non_fast_forward"},
@@ -325,7 +335,12 @@ if [ "$DO_RULESET" = 1 ]; then
    "dismiss_stale_reviews_on_push":false,"require_code_owner_review":false,
    "require_last_push_approval":false,"required_review_thread_resolution":false}}]}
 JSON
-        ok "ruleset created (add required status checks once CI exists)"
+        ); then
+            ok "ruleset created (add required status checks once CI exists)"
+        else
+            warn "GitHub refused to create the ruleset; everything else is done"
+            note "$(printf '%s' "$RULESET_ERR" | head -n 2)"
+        fi
     fi
 fi
 
