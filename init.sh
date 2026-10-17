@@ -39,6 +39,7 @@ warn() { printf '  %s!%s %s\n' "${YELLOW}" "${RESET}" "$*"; }
 note() { printf '  %s%s%s\n' "${DIM}" "$*" "${RESET}"; }
 die()  { printf '%serror:%s %s\n' "${RED}${BOLD}" "${RESET}" "$*" >&2; exit 1; }
 ask() { local a; read -r -p "$1 " a; [[ "$a" =~ ^[Yy] ]]; }
+ask_yes() { local a; read -r -p "$1 " a; ! [[ "$a" =~ ^[Nn] ]]; }
 
 # GET a GitHub API path with a token, without putting the token on a command line.
 # Prints "HTTP_CODE" on the first line, then response headers, a blank line, and the body.
@@ -74,6 +75,24 @@ if ! [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
     [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "expected OWNER/NAME"
 fi
 ok "repo $REPO"
+
+# --- questions (all asked up front) ------------------------------------------
+say "Questions"
+DO_TOKEN=0; DO_REGISTRY=0; DO_RULESET=0
+ask_yes "  Create and store a GitHub token for $REPO? [Y/n]" && DO_TOKEN=1
+if ask "  Store a package-only ghcr.io login for pushing images? [y/N]"; then
+    DO_REGISTRY=1
+    if [ -e "$DOCKER_DIR/config.json" ] && ! ask "  $DOCKER_DIR/config.json exists; replace it? [y/N]"; then
+        DO_REGISTRY=0
+        note "keeping the existing registry login"
+    fi
+fi
+if ! command -v gh >/dev/null; then
+    note "branch ruleset skipped (gh missing)"
+elif ask "  Create a 'main' ruleset on $REPO (PR required, no force-push/deletion, no bypass)? [y/N]"; then
+    gh auth status >/dev/null 2>&1 || die "run 'gh auth login' as a repo admin first"
+    DO_RULESET=1
+fi
 
 # --- project stubs -----------------------------------------------------------
 say "Stubs in .claude/sandbox"
@@ -142,63 +161,65 @@ set -euo pipefail
 EOF2
 
 # --- fine-grained PAT for git and gh -----------------------------------------
-say "Token for $REPO"
-URL="https://github.com/settings/personal-access-tokens/new?name=cs-${REPO#*/}&description=claude-sandbox&expires_in=90&contents=write&pull_requests=write&issues=write&metadata=read"
-note "In the browser: Only select repositories -> $REPO. Keep the pre-filled"
-note "permissions (Contents, Pull requests, Issues: RW). No Administration or Workflows."
-note "$URL"
-read -r -p "  Press Enter to open it (Ctrl-C to stop)... " _
-(command -v open >/dev/null && open "$URL") || (command -v xdg-open >/dev/null && xdg-open "$URL") || warn "could not open a browser; use the link above"
+if [ "$DO_TOKEN" = 1 ]; then
+    say "Token for $REPO"
+    URL="https://github.com/settings/personal-access-tokens/new?name=cs-${REPO#*/}&description=claude-sandbox&expires_in=90&contents=write&pull_requests=write&issues=write&metadata=read"
+    note "In the browser: Only select repositories -> $REPO. Keep the pre-filled"
+    note "permissions (Contents, Pull requests, Issues: RW). No Administration or Workflows."
+    note "$URL"
+    read -r -p "  Press Enter to open it (Ctrl-C to stop)... " _
+    (command -v open >/dev/null && open "$URL") || (command -v xdg-open >/dev/null && xdg-open "$URL") || warn "could not open a browser; use the link above"
 
-read -r -s -p "  Paste the token (hidden; blank skips): " TOKEN; echo
-if [ -n "$TOKEN" ]; then
-    case "$TOKEN" in
-        github_pat_*) ;;
-        ghp_*) die "that is a classic token, which cannot be limited to one repo. Create a fine-grained one." ;;
-        *) die "not a GitHub fine-grained token (expected github_pat_...)" ;;
-    esac
-    # /repos/...permissions describes YOUR role on the repo, not the token's, so
-    # probe what the token itself can do instead.
-    R=$(gh_get "$TOKEN" "/repos/$REPO")
-    [ "$(printf '%s\n' "$R" | http_code)" = 200 ] || die "token cannot read $REPO (check the repository selection)"
-    # Reading Actions settings needs the Administration permission.
-    A=$(gh_get "$TOKEN" "/repos/$REPO/actions/permissions")
-    [ "$(printf '%s\n' "$A" | http_code)" = 200 ] && die "token has the Administration permission; remove it"
-    # The receive-pack advertisement is refused unless the token may push.
-    P=$(curl -s -o /dev/null -w '%{http_code}' --config <(printf 'user = "x-access-token:%s"\n' "$TOKEN") \
-        "https://github.com/$REPO.git/info/refs?service=git-receive-pack")
-    [ "$P" = 200 ] || die "token cannot push to $REPO (HTTP $P); give it Contents: read/write"
-    ok "push access, no Administration"
-    # Every fine-grained token can read all public repos, so only private ones show the selection.
-    U=$(gh_get "$TOKEN" "/user/repos?per_page=100&visibility=private&affiliation=owner")
-    OTHERS=$(printf '%s\n' "$U" | grep -o '"full_name": *"[^"]*"' | cut -d'"' -f4 | grep -cvxF "$REPO" || true)
-    if [ "$OTHERS" -gt 0 ]; then
-        warn "token can also reach $OTHERS other private repo(s)"
-        ask "  Continue anyway? [y/N]" || die "recreate the token with only $REPO selected"
+    read -r -s -p "  Paste the token (hidden; blank skips): " TOKEN; echo
+    if [ -n "$TOKEN" ]; then
+        case "$TOKEN" in
+            github_pat_*) ;;
+            ghp_*) die "that is a classic token, which cannot be limited to one repo. Create a fine-grained one." ;;
+            *) die "not a GitHub fine-grained token (expected github_pat_...)" ;;
+        esac
+        # /repos/...permissions describes YOUR role on the repo, not the token's, so
+        # probe what the token itself can do instead.
+        R=$(gh_get "$TOKEN" "/repos/$REPO")
+        [ "$(printf '%s\n' "$R" | http_code)" = 200 ] || die "token cannot read $REPO (check the repository selection)"
+        # Reading Actions settings needs the Administration permission.
+        A=$(gh_get "$TOKEN" "/repos/$REPO/actions/permissions")
+        [ "$(printf '%s\n' "$A" | http_code)" = 200 ] && die "token has the Administration permission; remove it"
+        # The receive-pack advertisement is refused unless the token may push.
+        P=$(curl -s -o /dev/null -w '%{http_code}' --config <(printf 'user = "x-access-token:%s"\n' "$TOKEN") \
+            "https://github.com/$REPO.git/info/refs?service=git-receive-pack")
+        [ "$P" = 200 ] || die "token cannot push to $REPO (HTTP $P); give it Contents: read/write"
+        ok "push access, no Administration"
+        # Every fine-grained token can read all public repos, so only private ones show the selection.
+        U=$(gh_get "$TOKEN" "/user/repos?per_page=100&visibility=private&affiliation=owner")
+        OTHERS=$(printf '%s\n' "$U" | grep -o '"full_name": *"[^"]*"' | cut -d'"' -f4 | grep -cvxF "$REPO" || true)
+        if [ "$OTHERS" -gt 0 ]; then
+            warn "token can also reach $OTHERS other private repo(s)"
+            ask "  Continue anyway? [y/N]" || die "recreate the token with only $REPO selected"
+        else
+            ok "no other private repos reachable"
+        fi
+        note "Workflows permission cannot be probed; confirm it is off."
+        ( umask 077
+          touch "$ENV_FILE"
+          tmp=$(mktemp)
+          grep -v '^CS_GITHUB_TOKEN=' "$ENV_FILE" > "$tmp" || true
+          printf 'CS_GITHUB_TOKEN=%s\n' "$TOKEN" >> "$tmp"
+          cat "$tmp" > "$ENV_FILE"; rm -f "$tmp" )
+        chmod 600 "$ENV_FILE"
+        if git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q "$ENV_FILE"; then
+            echo "$ENV_FILE" >> "$(git rev-parse --git-dir)/info/exclude"
+            note "added $ENV_FILE to .git/info/exclude"
+        fi
+        ok "CS_GITHUB_TOKEN saved to $ENV_FILE (mode 600)"
+        unset TOKEN R A U OTHERS
     else
-        ok "no other private repos reachable"
+        note "no token entered; nothing written"
     fi
-    note "Workflows permission cannot be probed; confirm it is off."
-    ( umask 077
-      touch "$ENV_FILE"
-      tmp=$(mktemp)
-      grep -v '^CS_GITHUB_TOKEN=' "$ENV_FILE" > "$tmp" || true
-      printf 'CS_GITHUB_TOKEN=%s\n' "$TOKEN" >> "$tmp"
-      cat "$tmp" > "$ENV_FILE"; rm -f "$tmp" )
-    chmod 600 "$ENV_FILE"
-    if git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q "$ENV_FILE"; then
-        echo "$ENV_FILE" >> "$(git rev-parse --git-dir)/info/exclude"
-        note "added $ENV_FILE to .git/info/exclude"
-    fi
-    ok "CS_GITHUB_TOKEN saved to $ENV_FILE (mode 600)"
-    unset TOKEN R A U OTHERS
-else
-    note "token step skipped"
 fi
 
 # --- GHCR login in a dedicated docker config ---------------------------------
-say "Registry login (ghcr.io)"
-if ask "  Store a package-only ghcr.io login for pushing images? [y/N]"; then
+if [ "$DO_REGISTRY" = 1 ]; then
+    say "Registry login (ghcr.io)"
     note "Classic token, ONLY write:packages: https://github.com/settings/tokens/new?scopes=write:packages&description=cs-ghcr"
     read -r -p "  GitHub username: " GHUSER
     read -r -s -p "  Classic token (hidden): " CT; echo
@@ -209,9 +230,6 @@ if ask "  Store a package-only ghcr.io login for pushing images? [y/N]"; then
     case ",$SCOPES," in *write:packages*) ;; *) die "token lacks write:packages (has: ${SCOPES:-none})" ;; esac
     EXTRA=$(printf '%s' "$SCOPES" | tr -d ' ' | tr ',' '\n' | grep -vE '^(write:packages|read:packages)$' || true)
     [ -z "$EXTRA" ] || warn "token also has scopes: $(echo $EXTRA); only write:packages is needed"
-    if [ -e "$DOCKER_DIR/config.json" ] && ! ask "  $DOCKER_DIR/config.json exists; replace it? [y/N]"; then
-        die "left $DOCKER_DIR untouched"
-    fi
     # Written by hand: `docker login` would hand the secret to a credential helper
     # (macOS Keychain), and the container cannot reach that.
     ( umask 077; mkdir -p "$DOCKER_DIR"
@@ -224,11 +242,8 @@ if ask "  Store a package-only ghcr.io login for pushing images? [y/N]"; then
 fi
 
 # --- branch ruleset ----------------------------------------------------------
-say "Branch ruleset"
-if ! command -v gh >/dev/null; then
-    note "skipped (gh missing)"
-elif ask "  Create a 'main' ruleset on $REPO (PR required, no force-push/deletion, no bypass)? [y/N]"; then
-    gh auth status >/dev/null 2>&1 || die "run 'gh auth login' as a repo admin first"
+if [ "$DO_RULESET" = 1 ]; then
+    say "Branch ruleset"
     if gh api "repos/$REPO/rulesets" --jq '.[].name' | grep -qx main; then
         note "ruleset 'main' already exists; left alone"
     else
