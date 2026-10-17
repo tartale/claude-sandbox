@@ -42,8 +42,10 @@ esac
 if [ -f "$CS_ENV_FILE" ]; then
     if ! command -v envsubst >/dev/null 2>&1; then
         echo "envsubst is required to read ${CS_ENV_FILE}. Install it with:" >&2
-        echo "  macOS:          brew install gettext && brew link --force gettext" >&2
-        echo "  Debian/Ubuntu:  sudo apt-get install gettext-base" >&2
+        echo "  macOS:" >&2
+        echo "      brew install gettext && brew link --force gettext" >&2
+        echo "  Debian/Ubuntu:" >&2
+        echo "      sudo apt-get install gettext-base" >&2
         exit 1
     fi
     CS_ENV_COMMANDS=$(grep -nE '\$\(|`' "$CS_ENV_FILE" | cut -d: -f1 | paste -sd, - || true)
