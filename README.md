@@ -73,20 +73,12 @@ It:
 - checks that `envsubst` is installed (needed to read `.env`).
 - opens GitHub's token page with a single-repo fine-grained token pre-filled (Contents, Pull requests and Issues read/write), validates the token you paste (press Enter to skip the token step) (no Administration, can push, no other private repos), and writes `CS_GITHUB_TOKEN` to `.env` at mode 600, excluded from git locally.
 
-Options go after a placeholder name for the script, for example:
+It then asks whether to also:
 
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/init.sh)" init --registry --ruleset
-```
+- store a `write:packages` login for `ghcr.io` in a dedicated docker config (`~/.docker-sandbox`, override with `CS_SANDBOX_DOCKER_CONFIG`), so `CS_DOCKER_LOGIN` shares only that login and not your other registry logins. It prints the launch line and the steps to give the repo access to the package after the first push.
+- create a `main` branch ruleset (PR required, no force-push or deletion, no bypass). Needs `gh` logged in as a repo admin.
 
-(or pass them directly when running a checkout of `init.sh`):
-
-| Option | Effect |
-|---|---|
-| `--repo OWNER/NAME` | Repository to scope the token to (default: the `origin` remote) |
-| `--env-file FILE` | Env file to write the token to (default: `.env`) |
-| `--registry` | Stores a `write:packages` login for `ghcr.io` in a dedicated docker config (`~/.docker-sandbox`, override with `CS_SANDBOX_DOCKER_CONFIG`), so `CS_DOCKER_LOGIN` shares only that login and not your other registry logins. Prints the launch line and the steps to give the repo access to the package after the first push. |
-| `--ruleset` | Creates a `main` branch ruleset (PR required, no force-push or deletion, no bypass). Needs `gh` logged in as a repo admin. |
+It reads the repo from the `origin` remote (and asks if there is none). `CS_ENV_FILE` picks a different env file for the token.
 
 GitHub cannot create tokens through its API, so the token itself is created in the browser; the script checks it afterwards. It can verify that the token has push access and no Administration permission, but not that Workflows is off, so confirm that on the token page.
 

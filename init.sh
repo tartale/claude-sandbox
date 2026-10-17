@@ -8,31 +8,24 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF2'
-init.sh [--repo OWNER/NAME] [--registry] [--ruleset] [--env-file FILE]
+init.sh   (takes no options; it asks as it goes)
 
-Always:
   - creates .claude/sandbox/{build,run,start}.sh and plugin.sh stubs (existing files are kept)
-  - checks envsubst, walks you through a single-repo fine-grained PAT, validates
-    it, and writes CS_GITHUB_TOKEN to the env file (mode 600, git-excluded)
---registry  store a package-only login for ghcr.io in a DEDICATED docker config
-            (~/.docker-sandbox) so CS_DOCKER_LOGIN never exposes your other logins
---ruleset   create a "main" ruleset (PR required, no force-push or deletion, no bypass)
+  - walks you through a single-repo fine-grained token, validates it, and writes
+    CS_GITHUB_TOKEN to .env (mode 600, git-excluded); CS_ENV_FILE overrides the file
+  - optionally stores a package-only ghcr.io login in ~/.docker-sandbox
+  - optionally creates a "main" branch ruleset (needs gh)
 EOF2
 }
 
-REPO=""; ENV_FILE=".env"; WITH_REGISTRY=0; WITH_RULESET=0
+ENV_FILE="${CS_ENV_FILE:-.env}"
 DOCKER_DIR="${CS_SANDBOX_DOCKER_CONFIG:-$HOME/.docker-sandbox}"
 
-while [ $# -gt 0 ]; do
-    case "$1" in
-        --repo)     REPO="$2"; shift 2 ;;
-        --env-file) ENV_FILE="$2"; shift 2 ;;
-        --registry) WITH_REGISTRY=1; shift ;;
-        --ruleset)  WITH_RULESET=1; shift ;;
-        -h|--help)  usage; exit 0 ;;
-        *) echo "unknown option: $1" >&2; exit 2 ;;
-    esac
-done
+case "${1:-}" in
+    "") ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "init.sh takes no options (see --help)" >&2; exit 2 ;;
+esac
 
 # Colors only on a terminal, and never when NO_COLOR is set.
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -70,16 +63,16 @@ fi
 if command -v gh >/dev/null; then
     ok "gh"
 else
-    warn "gh missing$([ "$WITH_RULESET" = 1 ] && echo " (needed for --ruleset)")"
+    warn "gh missing (needed for the branch ruleset)"
     note "macOS:          brew install gh"
     note "Debian/Ubuntu:  sudo apt-get install gh   (or see https://cli.github.com)"
-    [ "$WITH_RULESET" = 1 ] && die "install gh, then rerun with --ruleset"
 fi
 
-if [ -z "$REPO" ]; then
-    REPO=$(git remote get-url origin 2>/dev/null | sed -E 's#^(git@github.com:|https://github.com/)##; s#\.git$##') || true
+REPO=$(git remote get-url origin 2>/dev/null | sed -E 's#^(git@github.com:|https://github.com/)##; s#\.git$##') || true
+if ! [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+    read -r -p "  GitHub repo (OWNER/NAME): " REPO
+    [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "expected OWNER/NAME"
 fi
-[[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "could not work out OWNER/NAME; pass --repo"
 ok "repo $REPO"
 
 # --- project stubs -----------------------------------------------------------
@@ -204,8 +197,8 @@ else
 fi
 
 # --- GHCR login in a dedicated docker config ---------------------------------
-if [ "$WITH_REGISTRY" = 1 ]; then
-    say "Registry login (ghcr.io)"
+say "Registry login (ghcr.io)"
+if ask "  Store a package-only ghcr.io login for pushing images? [y/N]"; then
     note "Classic token, ONLY write:packages: https://github.com/settings/tokens/new?scopes=write:packages&description=cs-ghcr"
     read -r -p "  GitHub username: " GHUSER
     read -r -s -p "  Classic token (hidden): " CT; echo
@@ -231,12 +224,14 @@ if [ "$WITH_REGISTRY" = 1 ]; then
 fi
 
 # --- branch ruleset ----------------------------------------------------------
-if [ "$WITH_RULESET" = 1 ]; then
-    say "Branch ruleset on $REPO"
+say "Branch ruleset"
+if ! command -v gh >/dev/null; then
+    note "skipped (gh missing)"
+elif ask "  Create a 'main' ruleset on $REPO (PR required, no force-push/deletion, no bypass)? [y/N]"; then
     gh auth status >/dev/null 2>&1 || die "run 'gh auth login' as a repo admin first"
     if gh api "repos/$REPO/rulesets" --jq '.[].name' | grep -qx main; then
         note "ruleset 'main' already exists; left alone"
-    elif ask "  Create ruleset 'main' (PR required, no force-push/deletion, no bypass)? [y/N]"; then
+    else
         gh api -X POST "repos/$REPO/rulesets" --input - >/dev/null <<'JSON'
 {"name":"main","target":"branch","enforcement":"active","bypass_actors":[],
  "conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]}},
