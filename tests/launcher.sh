@@ -141,8 +141,12 @@ echo '{"auths":{}}' > "${WORK}/home/.docker/config.json"
 run_launcher CS_DOCKER_LOGIN=true
 check "CS_DOCKER_LOGIN mounts the config read-only" has "ARG:${WORK}/home/.docker/config.json:/home/claude/.docker/config.json:ro"
 
+# --- container name ---------------------------------------------------------
+run_launcher CS_CONTAINER_NAME=my-box
+check "CS_CONTAINER_NAME sets the container name" has "ARG:my-box"
+
 # --- docker socket warning --------------------------------------------------
-run_launcher DOCKER_FLAGS="-v /var/run/docker.sock:/var/run/docker.sock"
+run_launcher CS_DOCKER_FLAGS="-v /var/run/docker.sock:/var/run/docker.sock"
 check "warns when the docker socket is mounted" mentions "the Docker socket is mounted"
 
 echo
