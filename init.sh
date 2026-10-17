@@ -89,7 +89,7 @@ if ask "  Store a package-only ghcr.io login for pushing images? [y/N]"; then
 fi
 HAVE_GH=0; command -v gh >/dev/null && HAVE_GH=1
 GH_NOTE=""; [ "$HAVE_GH" = 1 ] || GH_NOTE=" (requires 'gh' - not installed)"
-if ask "  Create a 'main' ruleset on $REPO (PR required, no force-push/deletion, no bypass)?$GH_NOTE [y/N]"; then
+if ask "  Create a 'main' ruleset on $REPO?$GH_NOTE [y/N]"; then
     [ "$HAVE_GH" = 1 ] || die "install gh (see above), then rerun"
     gh auth status >/dev/null 2>&1 || die "run 'gh auth login' as a repo admin first"
     DO_RULESET=1
