@@ -339,6 +339,10 @@ If you previously hand-symlinked the memory directory into a project, drop the s
 [ -L ~/.claude/projects/-workspace/memory ] && rm ~/.claude/projects/-workspace/memory
 ```
 
+## Tests
+
+`make test` runs the bash tests in `tests/` against the launcher with a stubbed `docker` (no daemon needed). The expansion tests need `envsubst` and are skipped without it. CI runs them on every pull request.
+
 ## Environment variables
 
 | Variable | Description |
