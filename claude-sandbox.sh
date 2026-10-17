@@ -103,7 +103,8 @@ if [ -n "${CS_USER_CONFIG_REPO}" ] || [ -n "${CS_USER_CONFIG_TOKEN}" ]; then
     USER_CONFIG_ARGS=(-e CS_USER_CONFIG_REPO -e CS_USER_CONFIG_TOKEN)
 elif [ -n "${CS_USER_CONFIG}" ]; then
     if [ ! -d "${CS_USER_CONFIG}" ]; then
-        echo "CS_USER_CONFIG=${CS_USER_CONFIG} does not exist; clone the user config repo there" >&2
+        echo "CS_USER_CONFIG=${CS_USER_CONFIG} does not exist. Clone your user config repo there:" >&2
+        echo "      git clone git@github.com:<you>/<repo>.git ${CS_USER_CONFIG}" >&2
         exit 1
     fi
     USER_CONFIG_ARGS=(-v "${CS_USER_CONFIG}:/home/claude/.claude-user")
@@ -116,7 +117,8 @@ DOCKER_LOGIN_ARGS=()
 if [ "${CS_DOCKER_LOGIN}" = "true" ]; then
     CS_DOCKER_CONFIG="${DOCKER_CONFIG:-${HOME}/.docker}/config.json"
     if [ ! -f "${CS_DOCKER_CONFIG}" ]; then
-        echo "CS_DOCKER_LOGIN=true but ${CS_DOCKER_CONFIG} does not exist; run 'docker login' first" >&2
+        echo "CS_DOCKER_LOGIN=true but ${CS_DOCKER_CONFIG} does not exist. Log in first:" >&2
+        echo "      docker login" >&2
         exit 1
     fi
     if grep -qE '"(credsStore|credHelpers)"' "${CS_DOCKER_CONFIG}"; then
