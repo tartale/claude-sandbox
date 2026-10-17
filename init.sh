@@ -80,16 +80,16 @@ ok "repo $REPO"
 say "Questions"
 DO_TOKEN=0; DO_REGISTRY=0; DO_RULESET=0
 ask_yes "  Create and store a GitHub token for $REPO? [Y/n]" && DO_TOKEN=1
-if ask "  Store a package-only ghcr.io login for pushing images? [y/N]"; then
+if ask_yes "  Store a package-only ghcr.io login for pushing images? [Y/n]"; then
     DO_REGISTRY=1
-    if [ -e "$DOCKER_DIR/config.json" ] && ! ask "  $DOCKER_DIR/config.json exists; replace it? [y/N]"; then
+    if [ -e "$DOCKER_DIR/config.json" ] && ! ask_yes "  $DOCKER_DIR/config.json exists; replace it? [Y/n]"; then
         DO_REGISTRY=0
         note "keeping the existing registry login"
     fi
 fi
 HAVE_GH=0; command -v gh >/dev/null && HAVE_GH=1
 GH_NOTE=""; [ "$HAVE_GH" = 1 ] || GH_NOTE=" (requires 'gh' - not installed)"
-if ask "  Create a 'main' ruleset on $REPO?$GH_NOTE [y/N]"; then
+if ask_yes "  Create a 'main' ruleset on $REPO?$GH_NOTE [Y/n]"; then
     [ "$HAVE_GH" = 1 ] || die "install gh (see above), then rerun"
     gh auth status >/dev/null 2>&1 || die "run 'gh auth login' as a repo admin first"
     DO_RULESET=1
@@ -134,7 +134,7 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
-NAME="${CS_CONTAINER_NAME:-claude-sandbox-$(basename "$PWD" | tr -c 'A-Za-z0-9_.\n-' '-')}"
+NAME="${CS_CONTAINER_NAME:-cs-@TAG@}"
 export CS_CONTAINER_NAME="$NAME"
 
 case "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || true)" in
