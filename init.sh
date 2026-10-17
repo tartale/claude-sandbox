@@ -87,9 +87,10 @@ if ask "  Store a package-only ghcr.io login for pushing images? [y/N]"; then
         note "keeping the existing registry login"
     fi
 fi
-if ! command -v gh >/dev/null; then
-    note "branch ruleset skipped (gh missing)"
-elif ask "  Create a 'main' ruleset on $REPO (PR required, no force-push/deletion, no bypass)? [y/N]"; then
+HAVE_GH=0; command -v gh >/dev/null && HAVE_GH=1
+GH_NOTE=""; [ "$HAVE_GH" = 1 ] || GH_NOTE=" (requires 'gh' - not installed)"
+if ask "  Create a 'main' ruleset on $REPO (PR required, no force-push/deletion, no bypass)?$GH_NOTE [y/N]"; then
+    [ "$HAVE_GH" = 1 ] || die "install gh (see above), then rerun"
     gh auth status >/dev/null 2>&1 || die "run 'gh auth login' as a repo admin first"
     DO_RULESET=1
 fi
@@ -159,6 +160,29 @@ set -euo pipefail
 # Project-specific packages:
 # apt-get update && apt-get install -y --no-install-recommends <packages>
 EOF2
+
+# --- launcher settings in .envrc ---------------------------------------------
+# Add any CS_ launcher variable that .envrc does not mention yet, with its default;
+# variables whose default is "unset" go in commented out.
+say "Launcher settings in .envrc"
+add_setting() {   # NAME VALUE ACTIVE(1|0)
+    if [ -f .envrc ] && grep -qE "^[[:space:]]*#?[[:space:]]*(export[[:space:]]+)?$1=" .envrc; then
+        note "kept    $1"
+        return
+    fi
+    if [ "$3" = 1 ]; then printf 'export %s=%s\n' "$1" "$2" >> .envrc
+    else printf '# export %s=%s\n' "$1" "$2" >> .envrc; fi
+    ok "added   $1"
+}
+add_setting CS_IMAGE_REPO ghcr.io/tartale/claude-sandbox 1
+add_setting CS_IMAGE_TAG "$IMAGE_TAG" 1
+add_setting CS_ENV_FILE "$ENV_FILE" 1
+add_setting CS_DOCKER_LOGIN false 1
+add_setting CS_USER_CONFIG "" 0
+add_setting CS_DOCKER_FLAGS "" 0
+add_setting CS_PIDS_LIMIT "" 0
+add_setting CS_MEMORY "" 0
+if command -v direnv >/dev/null; then note "run: direnv allow"; else note "direnv not installed; export these in your shell instead"; fi
 
 # --- fine-grained PAT for git and gh -----------------------------------------
 if [ "$DO_TOKEN" = 1 ]; then
