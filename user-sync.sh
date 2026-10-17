@@ -17,6 +17,22 @@ fi
 
 cd "${USER_CONFIG}"
 
+# A read-only clone has no remote; hand the changes back as a patch to review
+# and apply from a trusted checkout (git am < file).
+if [ -z "$(git remote)" ]; then
+    git add -A
+    git diff --cached --quiet || git commit -q -m "${1:-Update user rules and memories}"
+    patch=/workspace/.tmp/claude-user.patch
+    mkdir -p "$(dirname "${patch}")"
+    git format-patch --stdout refs/sandbox/base..HEAD > "${patch}"
+    if [ -s "${patch}" ]; then
+        echo "read-only user config: wrote ${patch}; review it and apply with 'git am' in your claude-user checkout"
+    else
+        echo "user config already up to date"
+    fi
+    exit 0
+fi
+
 if [ -z "$(git status --porcelain)" ]; then
     echo "user config already up to date"
     exit 0
