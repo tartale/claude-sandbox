@@ -34,8 +34,17 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-say() { printf '\n==> %s\n' "$*"; }
-die() { echo "error: $*" >&2; exit 1; }
+# Colors only on a terminal, and never when NO_COLOR is set.
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    BOLD=$'\e[1m'; DIM=$'\e[2m'; RED=$'\e[31m'; GREEN=$'\e[32m'; YELLOW=$'\e[33m'; CYAN=$'\e[36m'; RESET=$'\e[0m'
+else
+    BOLD=""; DIM=""; RED=""; GREEN=""; YELLOW=""; CYAN=""; RESET=""
+fi
+say()  { printf '\n%s%s%s\n' "${BOLD}${CYAN}" "$*" "${RESET}"; }
+ok()   { printf '  %s✓%s %s\n' "${GREEN}" "${RESET}" "$*"; }
+warn() { printf '  %s!%s %s\n' "${YELLOW}" "${RESET}" "$*"; }
+note() { printf '  %s%s%s\n' "${DIM}" "$*" "${RESET}"; }
+die()  { printf '%serror:%s %s\n' "${RED}${BOLD}" "${RESET}" "$*" >&2; exit 1; }
 ask() { local a; read -r -p "$1 " a; [[ "$a" =~ ^[Yy] ]]; }
 
 # GET a GitHub API path with a token, without putting the token on a command line.
@@ -48,29 +57,38 @@ http_code() { sed -n '1s/^HTTP[^ ]* \([0-9]*\).*/\1/p'; }
 
 [ -d /workspace ] && [ -S /var/run/docker.sock ] && [ -n "${CUID:-}" ] && die "run this on the host, not inside the sandbox"
 
-say "Checking prerequisites"
+say "Prerequisites"
 command -v curl >/dev/null || die "curl is required"
+ok "curl"
 if command -v envsubst >/dev/null; then
-    echo "envsubst: ok"
+    ok "envsubst"
 else
-    echo "envsubst is missing; the sandbox launcher needs it to read $ENV_FILE. Install it:"
-    echo "  macOS:          brew install gettext && brew link --force gettext"
-    echo "  Debian/Ubuntu:  sudo apt-get install gettext-base"
+    warn "envsubst missing (the launcher needs it to read $ENV_FILE)"
+    note "macOS:          brew install gettext && brew link --force gettext"
+    note "Debian/Ubuntu:  sudo apt-get install gettext-base"
+fi
+if command -v gh >/dev/null; then
+    ok "gh"
+else
+    warn "gh missing$([ "$WITH_RULESET" = 1 ] && echo " (needed for --ruleset)")"
+    note "macOS:          brew install gh"
+    note "Debian/Ubuntu:  sudo apt-get install gh   (or see https://cli.github.com)"
+    [ "$WITH_RULESET" = 1 ] && die "install gh, then rerun with --ruleset"
 fi
 
 if [ -z "$REPO" ]; then
     REPO=$(git remote get-url origin 2>/dev/null | sed -E 's#^(git@github.com:|https://github.com/)##; s#\.git$##') || true
 fi
 [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "could not work out OWNER/NAME; pass --repo"
-echo "repo: $REPO"
+ok "repo $REPO"
 
 # --- project stubs -----------------------------------------------------------
-say "Creating .claude/sandbox stubs"
+say "Stubs in .claude/sandbox"
 IMAGE_TAG=$(printf '%s' "${REPO#*/}" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_.\n-' '-')
 mkdir -p .claude/sandbox
 write_stub() {   # path mode, content on stdin
-    if [ -e "$1" ]; then echo "kept $1 (already exists)"; cat >/dev/null; return; fi
-    sed "s/@TAG@/$IMAGE_TAG/g" > "$1"; chmod "$2" "$1"; echo "created $1"
+    if [ -e "$1" ]; then note "kept    $1"; cat >/dev/null; return; fi
+    sed "s/@TAG@/$IMAGE_TAG/g" > "$1"; chmod "$2" "$1"; ok "created $1"
 }
 write_stub .claude/sandbox/build.sh 755 <<'EOF2'
 #!/usr/bin/env bash
@@ -131,29 +149,21 @@ set -euo pipefail
 EOF2
 
 # --- fine-grained PAT for git and gh -----------------------------------------
-say "Create a fine-grained token for $REPO"
+say "Token for $REPO"
 URL="https://github.com/settings/personal-access-tokens/new?name=cs-${REPO#*/}&description=claude-sandbox&expires_in=90&contents=write&pull_requests=write&issues=write&metadata=read"
-cat <<EOF
-GitHub cannot create tokens through its API, so do this in the browser:
-  - Repository access: "Only select repositories" -> $REPO
-  - Permissions: Contents RW, Pull requests RW, Issues RW (pre-filled). Leave
-    Administration, Workflows and Actions off.
-  - Expiration: 90 days or less.
-  - Copy the token when GitHub shows it, then come back here and paste it.
+note "In the browser: Only select repositories -> $REPO. Keep the pre-filled"
+note "permissions (Contents, Pull requests, Issues: RW). No Administration or Workflows."
+note "$URL"
+read -r -p "  Press Enter to open it (Ctrl-C to stop)... " _
+(command -v open >/dev/null && open "$URL") || (command -v xdg-open >/dev/null && xdg-open "$URL") || warn "could not open a browser; use the link above"
 
-Token page: $URL
-EOF
-read -r -p "Press Enter to open the token page in your browser (Ctrl-C to stop)... " _
-(command -v open >/dev/null && open "$URL") || (command -v xdg-open >/dev/null && xdg-open "$URL") || echo "(could not open a browser; use the link above)"
-
-read -r -s -p "Paste the token (input hidden; blank keeps the current one): " TOKEN; echo
+read -r -s -p "  Paste the token (hidden; blank skips): " TOKEN; echo
 if [ -n "$TOKEN" ]; then
     case "$TOKEN" in
         github_pat_*) ;;
         ghp_*) die "that is a classic token, which cannot be limited to one repo. Create a fine-grained one." ;;
         *) die "not a GitHub fine-grained token (expected github_pat_...)" ;;
     esac
-    say "Validating"
     # /repos/...permissions describes YOUR role on the repo, not the token's, so
     # probe what the token itself can do instead.
     R=$(gh_get "$TOKEN" "/repos/$REPO")
@@ -165,19 +175,17 @@ if [ -n "$TOKEN" ]; then
     P=$(curl -s -o /dev/null -w '%{http_code}' --config <(printf 'user = "x-access-token:%s"\n' "$TOKEN") \
         "https://github.com/$REPO.git/info/refs?service=git-receive-pack")
     [ "$P" = 200 ] || die "token cannot push to $REPO (HTTP $P); give it Contents: read/write"
-    echo "push access: ok, administration: no"
+    ok "push access, no Administration"
     # Every fine-grained token can read all public repos, so only private ones show the selection.
     U=$(gh_get "$TOKEN" "/user/repos?per_page=100&visibility=private&affiliation=owner")
     OTHERS=$(printf '%s\n' "$U" | grep -o '"full_name": *"[^"]*"' | cut -d'"' -f4 | grep -cvxF "$REPO" || true)
     if [ "$OTHERS" -gt 0 ]; then
-        echo "warning: this token can reach $OTHERS other private repo(s) besides $REPO."
-        ask "Continue anyway? [y/N]" || die "recreate the token with only $REPO selected"
+        warn "token can also reach $OTHERS other private repo(s)"
+        ask "  Continue anyway? [y/N]" || die "recreate the token with only $REPO selected"
     else
-        echo "other private repos reachable: none"
+        ok "no other private repos reachable"
     fi
-    echo "(Workflows permission cannot be probed; confirm it is off on the token page.)"
-
-    say "Writing CS_GITHUB_TOKEN to $ENV_FILE"
+    note "Workflows permission cannot be probed; confirm it is off."
     ( umask 077
       touch "$ENV_FILE"
       tmp=$(mktemp)
@@ -187,31 +195,28 @@ if [ -n "$TOKEN" ]; then
     chmod 600 "$ENV_FILE"
     if git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q "$ENV_FILE"; then
         echo "$ENV_FILE" >> "$(git rev-parse --git-dir)/info/exclude"
-        echo "added $ENV_FILE to .git/info/exclude (local only, nothing to commit)"
+        note "added $ENV_FILE to .git/info/exclude"
     fi
+    ok "CS_GITHUB_TOKEN saved to $ENV_FILE (mode 600)"
     unset TOKEN R A U OTHERS
 else
-    echo "token unchanged"
+    note "token step skipped"
 fi
 
 # --- GHCR login in a dedicated docker config ---------------------------------
 if [ "$WITH_REGISTRY" = 1 ]; then
-    say "Registry login for ghcr.io (dedicated config: $DOCKER_DIR)"
-    cat <<EOF
-GHCR only accepts classic tokens. Create one at
-  https://github.com/settings/tokens/new?scopes=write:packages&description=cs-ghcr
-with ONLY the write:packages scope (it can write every package you can).
-EOF
-    read -r -p "GitHub username: " GHUSER
-    read -r -s -p "Classic token (hidden): " CT; echo
+    say "Registry login (ghcr.io)"
+    note "Classic token, ONLY write:packages: https://github.com/settings/tokens/new?scopes=write:packages&description=cs-ghcr"
+    read -r -p "  GitHub username: " GHUSER
+    read -r -s -p "  Classic token (hidden): " CT; echo
     case "$CT" in ghp_*) ;; *) die "expected a classic token (ghp_...)" ;; esac
     H=$(gh_get "$CT" "/user")
     [ "$(printf '%s\n' "$H" | http_code)" = 200 ] || die "token rejected by GitHub"
     SCOPES=$(printf '%s\n' "$H" | tr 'A-Z' 'a-z' | sed -n 's/^x-oauth-scopes: *//p')
     case ",$SCOPES," in *write:packages*) ;; *) die "token lacks write:packages (has: ${SCOPES:-none})" ;; esac
     EXTRA=$(printf '%s' "$SCOPES" | tr -d ' ' | tr ',' '\n' | grep -vE '^(write:packages|read:packages)$' || true)
-    [ -z "$EXTRA" ] || echo "warning: token also has scopes: $(echo $EXTRA); only write:packages is needed"
-    if [ -e "$DOCKER_DIR/config.json" ] && ! ask "$DOCKER_DIR/config.json exists; replace it? [y/N]"; then
+    [ -z "$EXTRA" ] || warn "token also has scopes: $(echo $EXTRA); only write:packages is needed"
+    if [ -e "$DOCKER_DIR/config.json" ] && ! ask "  $DOCKER_DIR/config.json exists; replace it? [y/N]"; then
         die "left $DOCKER_DIR untouched"
     fi
     # Written by hand: `docker login` would hand the secret to a credential helper
@@ -219,33 +224,19 @@ EOF
     ( umask 077; mkdir -p "$DOCKER_DIR"
       printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$(printf '%s:%s' "$GHUSER" "$CT" | base64 | tr -d '\n')" > "$DOCKER_DIR/config.json" )
     unset CT H
-    echo "stored. Launch with:"
-    echo "  DOCKER_CONFIG=$DOCKER_DIR CS_DOCKER_LOGIN=true claude-sandbox.sh"
-    echo "(keep these in your shell environment, not in $ENV_FILE)"
-    cat <<EOF2
-
-After the FIRST push of the image, give the repo access to the package (needed
-for CI to push it with GITHUB_TOKEN, and to link the package to the repo):
-  1. Open the package settings. For a personal account:
-       https://github.com/users/${REPO%%/*}/packages/container/<image-name>/settings
-     (for an organization use /orgs/<org>/ instead of /users/<owner>/).
-  2. "Manage Actions access" -> "Add Repository" -> $REPO -> role "Write".
-  3. Optional: "Change visibility" if others need to pull without logging in
-     (new packages are private).
-To link the package to the repo automatically on that first push, add this to
-the Dockerfile:
-  LABEL org.opencontainers.image.source="https://github.com/$REPO"
-EOF2
+    ok "stored in $DOCKER_DIR"
+    note "launch with: DOCKER_CONFIG=$DOCKER_DIR CS_DOCKER_LOGIN=true claude-sandbox.sh  (shell env, not $ENV_FILE)"
+    note "after the first push: package settings -> Manage Actions access -> add $REPO (Write)"
+    note "Dockerfile: LABEL org.opencontainers.image.source=\"https://github.com/$REPO\" links the package to the repo"
 fi
 
 # --- branch ruleset ----------------------------------------------------------
 if [ "$WITH_RULESET" = 1 ]; then
     say "Branch ruleset on $REPO"
-    command -v gh >/dev/null || die "gh is required for --ruleset"
     gh auth status >/dev/null 2>&1 || die "run 'gh auth login' as a repo admin first"
     if gh api "repos/$REPO/rulesets" --jq '.[].name' | grep -qx main; then
-        echo "a ruleset named 'main' already exists; leaving it alone"
-    elif ask "Create ruleset 'main' (PR required, no force-push/deletion, no bypass)? [y/N]"; then
+        note "ruleset 'main' already exists; left alone"
+    elif ask "  Create ruleset 'main' (PR required, no force-push/deletion, no bypass)? [y/N]"; then
         gh api -X POST "repos/$REPO/rulesets" --input - >/dev/null <<'JSON'
 {"name":"main","target":"branch","enforcement":"active","bypass_actors":[],
  "conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]}},
@@ -254,9 +245,9 @@ if [ "$WITH_RULESET" = 1 ]; then
    "dismiss_stale_reviews_on_push":false,"require_code_owner_review":false,
    "require_last_push_approval":false,"required_review_thread_resolution":false}}]}
 JSON
-        echo "created. Add required status checks in Settings -> Rules once CI exists."
+        ok "ruleset created (add required status checks once CI exists)"
     fi
 fi
 
 say "Done"
-echo "Start the sandbox from the project root as usual."
+note "Start with .claude/sandbox/run.sh"
