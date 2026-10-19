@@ -155,6 +155,8 @@ CS_DOCKER_FLAGS="-v /var/run/docker.sock:/var/run/docker.sock" ./claude-sandbox.
 
 Mounting the socket gives the sandbox root on the host (it can start privileged containers), so the launcher prints a warning when it sees one.
 
+This is an accepted risk, not a safeguarded feature: nothing filters what the agent asks the daemon to do. Mount the socket only in a sandbox whose job needs it (for example an SRE sandbox that rebuilds and restarts the service it owns), never in a general development sandbox, and keep that sandbox's project to one you trust. The launch scripts in `.claude/sandbox` are mounted read-only so the agent cannot add the mount to a launch that did not have it.
+
 The Playwright plugin bakes in the browsers *and* the system libraries they need — the part a plain
 `npm install playwright` inside a running sandbox can't do, since installing those libraries needs
 root. Browsers land in `/ms-playwright` with `PLAYWRIGHT_BROWSERS_PATH` exported for every shell, so
