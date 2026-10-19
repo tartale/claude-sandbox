@@ -396,7 +396,7 @@ The `.env` file follows standard `KEY=VALUE` format. Variables not listed in the
 
 The file is read as data and never run as shell. `$VAR` and `${VAR}` are expanded from your host environment using `envsubst` (macOS: `brew install gettext && brew link --force gettext`; Debian/Ubuntu: `sudo apt-get install gettext-base`), and the result is passed to `docker run --env-file`. Only variables your host exports are expanded, so a literal `$` in a secret is left alone. Command substitution (`$(...)`, backticks) is not run; the launcher warns and passes the text through unchanged. Launcher settings (`CS_*`) belong in your shell environment, not in `.env`.
 
-The env file, `.envrc` and `.git/hooks` are mounted read-only inside the container, because they run on the host later (when you launch, `cd` with direnv, or commit) and an agent must not be able to plant code in them. Edit them from the host. `.git/config` stays writable, so review `git diff` and `.git/config` before running host-side tooling on a checkout an agent has touched.
+The env file, `.envrc`, `.git/hooks` and `.claude/sandbox/{build,run,start}.sh` are mounted read-only inside the container, because they run on the host later (when you launch, `cd` with direnv, or commit) and an agent must not be able to plant code in them. Edit them from the host. `.claude/sandbox/plugin.sh` stays writable so the agent can maintain the project's dependencies; it only runs inside the image build, but read its `git diff` before running `build.sh`. `.git/config` stays writable, so review `git diff` and `.git/config` before running host-side tooling on a checkout an agent has touched.
 
 To use a different file name, set `CS_ENV_FILE`:
 
