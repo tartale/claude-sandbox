@@ -36,6 +36,16 @@ fi
 say()  { printf '\n%s%s%s\n' "${BOLD}${CYAN}" "$*" "${RESET}"; }
 ok()   { printf '  %s✓%s %s\n' "${GREEN}" "${RESET}" "$*"; }
 warn() { printf '  %s!%s %s\n' "${YELLOW}" "${RESET}" "$*"; }
+# Unified diff of an edited file against its template, indented and colored.
+show_diff() {   # your-copy template
+    note "- your copy   + template"
+    diff -u -L "your copy" -L template "$1" "$2" | awk -v r="$RED" -v g="$GREEN" -v c="$CYAN" -v d="$DIM" -v z="$RESET" '
+        /^(---|\+\+\+) / { next }
+        /^@@/               { print "    " c $0 z; next }
+        /^-/                { print "    " r $0 z; next }
+        /^\+/               { print "    " g $0 z; next }
+                            { print "    " d $0 z }' || true
+}
 cmd()  { printf '      %s%s%s\n' "${BOLD}" "$*" "${RESET}"; }   # a command or URL alone on its line, to copy
 note() { printf '  %s%s%s\n' "${DIM}" "$*" "${RESET}"; }
 die()  { printf '%serror:%s %s\n' "${RED}${BOLD}" "${RESET}" "$*" >&2; exit 1; }
@@ -224,13 +234,13 @@ for name in $STUB_NAMES; do
     fi
     shown=0
     while :; do
-        if [ "$shown" = 0 ]; then hint="[d/y/N]"; else hint="[y/N]"; fi
+        if [ "$shown" = 0 ]; then hint="[D/y/n]"; else hint="[y/N]"; fi
         read -r -p "  $dest differs from the template and looks edited. Replace it? $hint " a
         case "$a" in
-            [Dd]*)  diff -u "$dest" "$STUB_DIR/$name" || true; shown=1 ;;
+            [Dd]*)  show_diff "$dest" "$STUB_DIR/$name"; shown=1 ;;
             [Yy]*)  STUB_WRITE="$STUB_WRITE $name"; break ;;
             [Nn]*)  break ;;
-            "")     if [ "$shown" = 0 ]; then diff -u "$dest" "$STUB_DIR/$name" || true; shown=1; else break; fi ;;
+            "")     if [ "$shown" = 0 ]; then show_diff "$dest" "$STUB_DIR/$name"; shown=1; else break; fi ;;
         esac
     done
 done
