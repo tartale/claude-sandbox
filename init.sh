@@ -189,17 +189,18 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
 
-# Name the container cs-<repo>, or cs-<repo>-2, -3... when another is already
-# running, and remove it on exit so the name is free again.
+# Name the container cs-<repo>, or cs-<repo>-2, -3... while another is running.
+# A stopped container with the chosen name is removed, so every run is fresh
+# (and CS_DOCKER_FLAGS may include --restart, which cannot be combined with --rm).
 if [ -z "${CS_CONTAINER_NAME:-}" ]; then
     CS_CONTAINER_NAME="cs-@TAG@"
     n=1
-    while docker inspect "$CS_CONTAINER_NAME" >/dev/null 2>&1; do
+    while [ "$(docker inspect -f '{{.State.Running}}' "$CS_CONTAINER_NAME" 2>/dev/null || true)" = true ]; do
         n=$((n + 1)); CS_CONTAINER_NAME="cs-@TAG@-$n"
     done
+    docker rm "$CS_CONTAINER_NAME" >/dev/null 2>&1 || true
     export CS_CONTAINER_NAME
 fi
-export CS_DOCKER_FLAGS="--rm ${CS_DOCKER_FLAGS:-}"
 
 exec /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox --name "@REPO@" "$@"
 EOF2
@@ -214,13 +215,13 @@ export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
 NAME="${CS_CONTAINER_NAME:-cs-@TAG@}"
 export CS_CONTAINER_NAME="$NAME"
 
-# Each start creates a fresh container (--rm removes it on stop), so changed
-# variables and flags always apply.
+# Each start creates a fresh container, so changed variables and flags always
+# apply. No --rm: it cannot be combined with --restart in CS_DOCKER_FLAGS.
 if [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || true)" = true ]; then
     echo "$NAME is already running"
 else
-    docker rm "$NAME" >/dev/null 2>&1 || true   # a stopped one created without --rm
-    CS_DOCKER_FLAGS="-d -t --rm ${CS_DOCKER_FLAGS:-}" \
+    docker rm "$NAME" >/dev/null 2>&1 || true   # a stopped one from an earlier start
+    CS_DOCKER_FLAGS="-d -t ${CS_DOCKER_FLAGS:-}" \
         /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox --name "@REPO@" "$@" >/dev/null
     echo "started $NAME"
 fi
