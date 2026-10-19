@@ -166,7 +166,7 @@ IMAGE_TAG=$(printf '%s' "${REPO#*/}" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_.\n-' '-')
 mkdir -p .claude/sandbox
 write_stub() {   # path mode, content on stdin
     if [ -e "$1" ]; then note "kept    $1"; cat >/dev/null; return; fi
-    sed "s/@TAG@/$IMAGE_TAG/g" > "$1"; chmod "$2" "$1"; ok "created $1"
+    sed "s/@TAG@/$IMAGE_TAG/g; s/@REPO@/${REPO#*/}/g" > "$1"; chmod "$2" "$1"; ok "created $1"
 }
 write_stub .claude/sandbox/build.sh 755 <<'EOF2'
 #!/usr/bin/env bash
@@ -189,7 +189,19 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
 
-exec /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox "$@"
+# Name the container cs-<repo>, or cs-<repo>-2, -3... when another is already
+# running, and remove it on exit so the name is free again.
+if [ -z "${CS_CONTAINER_NAME:-}" ]; then
+    CS_CONTAINER_NAME="cs-@TAG@"
+    n=1
+    while docker inspect "$CS_CONTAINER_NAME" >/dev/null 2>&1; do
+        n=$((n + 1)); CS_CONTAINER_NAME="cs-@TAG@-$n"
+    done
+    export CS_CONTAINER_NAME
+fi
+export CS_DOCKER_FLAGS="--rm ${CS_DOCKER_FLAGS:-}"
+
+exec /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox --name "@REPO@" "$@"
 EOF2
 write_stub .claude/sandbox/start.sh 755 <<'EOF2'
 #!/usr/bin/env bash
@@ -206,7 +218,7 @@ case "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || true)" in
     true)  echo "$NAME is already running" ;;
     false) docker start "$NAME" >/dev/null; echo "restarted $NAME" ;;
     *)     CS_DOCKER_FLAGS="-d -t ${CS_DOCKER_FLAGS:-}" \
-               /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox "$@" >/dev/null
+               /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox --name "@REPO@" "$@" >/dev/null
            echo "started $NAME" ;;
 esac
 printf '\nAttach (detach with ctrl-p ctrl-q):\n\ndocker attach %s\n\nStop:\n\ndocker stop %s\n' "$NAME" "$NAME"

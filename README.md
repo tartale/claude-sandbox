@@ -24,14 +24,14 @@ Set the project up once (see [Setting up a project](#setting-up-a-project)); tha
 
 Claude Code starts inside a container with the project directory as `/workspace`. The launcher uses the image `ghcr.io/tartale/claude-sandbox:<tag>` (the tag defaults to the project name; override with `CS_IMAGE_TAG` and `CS_IMAGE_REPO`). Docker pulls it if it exists in the registry; otherwise build it first with `.claude/sandbox/build.sh`. Published release images (`:latest`, language tags) reflect the last tagged release, not the latest `main`.
 
-`start.sh` names the container `cs-<repo-name>` (override with `CS_CONTAINER_NAME`; `claude-sandbox.sh` otherwise appends a random suffix). It prints how to reach it:
+Both scripts name the Claude Code session after the repo (`--name`). `run.sh` names its container `cs-<repo-name>` (`cs-<repo-name>-2`, `-3`… if one is already running) and removes it on exit. `start.sh` names its container `cs-<repo-name>`; it prints how to reach it:
 
 ```bash
 docker attach cs-<repo-name>   # detach again with ctrl-p ctrl-q
 docker stop cs-<repo-name>
 ```
 
-If the container already exists, `start.sh` reuses it instead of creating another.
+If the container already exists, `start.sh` reuses it instead of creating another. Override either name with `CS_CONTAINER_NAME`; `claude-sandbox.sh` on its own appends a random suffix.
 
 ### Passing arguments to Claude
 
