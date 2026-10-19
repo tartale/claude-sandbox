@@ -239,7 +239,7 @@ for name in $STUB_NAMES; do
     [ "$(recorded_field "$name" 3)" = "$(file_hash "$STUB_DIR/$name")" ] && continue
     shown=0
     while :; do
-        if [ "$shown" = 0 ]; then hint="[D/y/n]"; else hint="[y/N]"; fi
+        if [ "$shown" = 0 ]; then hint="[y/n/D]"; else hint="[y/N/d]"; fi
         read -r -p "  $dest differs from the template and looks edited. Replace it? $hint " a
         case "$a" in
             [Dd]*)  show_diff "$dest" "$STUB_DIR/$name"; shown=1 ;;
