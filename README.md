@@ -69,7 +69,7 @@ Run this from a project's root, on your host (not inside a sandbox), to set the 
 
 It:
 
-- creates `.claude/sandbox/` stubs (existing files are kept): `plugin.sh` is where the project's plugins and packages go; `build.sh` builds the project's image from it; `run.sh` starts the sandbox interactively; `start.sh` starts it in the background. They wrap the `build-image.sh` and `claude-sandbox.sh` one-liners, and use the repo name as the image tag.
+- creates `.claude/sandbox/` stubs (a stub that differs from the current template is only replaced if you say so, with `d` to see the diff; the default is yes when you haven't edited it since the last run, no when you have; `.claude/sandbox/.init-hashes` records what was last written): `plugin.sh` is where the project's plugins and packages go; `build.sh` builds the project's image from it; `run.sh` starts the sandbox interactively; `start.sh` starts it in the background. They wrap the `build-image.sh` and `claude-sandbox.sh` one-liners, and use the repo name as the image tag.
 - checks that `envsubst` is installed (needed to read `.env`).
 - adds the `CS_` launcher settings (`CS_IMAGE_REPO`, `CS_IMAGE_TAG`, `CS_ENV_FILE`, `CS_DOCKER_LOGIN`, and commented-out `CS_USER_CONFIG`, `CS_DOCKER_FLAGS`, `CS_PIDS_LIMIT`, `CS_MEMORY`) with their defaults to `.envrc` in the project root; names already there are left alone.
 - opens GitHub's token page with a single-repo fine-grained token pre-filled (Contents, Pull requests and Issues read/write), validates the token you paste (no Administration, can push, no other private repos), and writes `CS_GITHUB_TOKEN` to `.env` at mode 600, excluded from git locally.

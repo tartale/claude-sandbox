@@ -117,9 +117,121 @@ if ! [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
 fi
 ok "repo $REPO"
 
+# --- stub templates, rendered to a temp dir so they can be compared ------------
+IMAGE_TAG=$(printf '%s' "${REPO#*/}" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_.\n-' '-')
+STUB_OUT=.claude/sandbox
+STUB_NAMES="build.sh run.sh start.sh plugin.sh"
+STUB_DIR=$(mktemp -d)
+trap 'rm -rf "$STUB_DIR"' EXIT
+render_stub() {   # name, content on stdin
+    sed "s/@TAG@/$IMAGE_TAG/g; s/@REPO@/${REPO#*/}/g" > "$STUB_DIR/$1"
+}
+stub_mode() { if [ "$1" = plugin.sh ]; then echo 644; else echo 755; fi; }
+install_stub() { cp "$STUB_DIR/$1" "$STUB_OUT/$1"; chmod "$(stub_mode "$1")" "$STUB_OUT/$1"; }
+stub_in() { case " $2 " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+file_hash() { if command -v sha256sum >/dev/null; then sha256sum < "$1"; else shasum -a 256 < "$1"; fi | cut -d' ' -f1; }
+recorded_hash() { sed -n "s/^$1 //p" "$STUB_OUT/.init-hashes" 2>/dev/null | head -n 1; }
+render_stub build.sh <<'EOF2'
+#!/usr/bin/env bash
+# Builds this project's sandbox image from plugin.sh. Usage: .claude/sandbox/build.sh
+# Then start it with run.sh or start.sh in this directory.
+set -euo pipefail
+
+THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+export PLUGINS="${THIS_SCRIPT_DIR}/plugin.sh"
+export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
+
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+EOF2
+render_stub run.sh <<'EOF2'
+#!/usr/bin/env bash
+# Starts this project's sandbox interactively. Usage: .claude/sandbox/run.sh [claude args]
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
+
+# Name the container cs-<repo>, or cs-<repo>-2, -3... while another is running.
+# A stopped container with the chosen name is removed, so every run is fresh
+# (and CS_DOCKER_FLAGS may include --restart, which cannot be combined with --rm).
+if [ -z "${CS_CONTAINER_NAME:-}" ]; then
+    CS_CONTAINER_NAME="cs-@TAG@"
+    n=1
+    while [ "$(docker inspect -f '{{.State.Running}}' "$CS_CONTAINER_NAME" 2>/dev/null || true)" = true ]; do
+        n=$((n + 1)); CS_CONTAINER_NAME="cs-@TAG@-$n"
+    done
+    docker rm "$CS_CONTAINER_NAME" >/dev/null 2>&1 || true
+    export CS_CONTAINER_NAME
+fi
+
+exec /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox --name "@REPO@" "$@"
+EOF2
+render_stub start.sh <<'EOF2'
+#!/usr/bin/env bash
+# Starts this project's sandbox in the background; claude waits on a detached tty.
+# Usage: .claude/sandbox/start.sh [claude args]
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
+NAME="${CS_CONTAINER_NAME:-cs-@TAG@}"
+export CS_CONTAINER_NAME="$NAME"
+
+# Each start creates a fresh container, so changed variables and flags always
+# apply. No --rm: it cannot be combined with --restart in CS_DOCKER_FLAGS.
+if [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || true)" = true ]; then
+    echo "$NAME is already running"
+else
+    docker rm "$NAME" >/dev/null 2>&1 || true   # a stopped one from an earlier start
+    CS_DOCKER_FLAGS="-d -t ${CS_DOCKER_FLAGS:-}" \
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox --name "@REPO@" "$@" >/dev/null
+    echo "started $NAME"
+fi
+printf '\nAttach (detach with ctrl-p ctrl-q):\n\ndocker attach %s\n\nStop:\n\ndocker stop %s\n' "$NAME" "$NAME"
+EOF2
+render_stub plugin.sh <<'EOF2'
+#!/usr/bin/env bash
+# Runs as root while this project's sandbox image is built (see build.sh).
+# PLUGINS_DIR points at claude-sandbox's built-in plugins.
+set -euo pipefail
+
+# Built-in plugins:
+# "${PLUGINS_DIR}/languages/go.sh"
+# "${PLUGINS_DIR}/tools/docker.sh"
+
+# Project-specific packages:
+# apt-get update && apt-get install -y --no-install-recommends <packages>
+EOF2
+
+
 # --- questions (all asked up front) ------------------------------------------
 say "Questions"
 DO_TOKEN=0; DO_REGISTRY=0; DO_RULESET=0
+
+# A stub that differs from the current template: offer to replace it. If it is
+# the copy this script last wrote (unedited), replacing is safe, so that is the
+# default; if it was edited, the default is to keep it. d shows the diff.
+STUB_WRITE=""
+for name in $STUB_NAMES; do
+    dest="$STUB_OUT/$name"
+    [ -e "$dest" ] || continue
+    cmp -s "$STUB_DIR/$name" "$dest" && continue
+    if [ "$(recorded_hash "$name")" = "$(file_hash "$dest")" ]; then
+        def=Y; why="a newer template exists; your copy is unmodified"
+    else
+        def=N; why="it differs from the template and looks edited"
+    fi
+    while :; do
+        read -r -p "  Replace $dest? ($why) [$([ "$def" = Y ] && echo Y/n/d || echo y/N/d)] " a
+        case "$a" in
+            [Dd]*) diff -u "$dest" "$STUB_DIR/$name" || true ;;
+            [Yy]*) STUB_WRITE="$STUB_WRITE $name"; break ;;
+            [Nn]*) break ;;
+            "") [ "$def" = Y ] && STUB_WRITE="$STUB_WRITE $name"; break ;;
+        esac
+    done
+done
 
 # Questions about things that are already set up default to No.
 TOKEN_DEFAULT=Y; TOKEN_NOTE=""
@@ -160,86 +272,30 @@ if ask_def "  Create a 'main' ruleset on $REPO?$RULESET_NOTE" "$RULESET_DEFAULT"
     DO_RULESET=1
 fi
 
-# --- project stubs -----------------------------------------------------------
+# --- project stubs: apply the decisions made above ---------------------------
 say "Stubs in .claude/sandbox"
-IMAGE_TAG=$(printf '%s' "${REPO#*/}" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_.\n-' '-')
-mkdir -p .claude/sandbox
-write_stub() {   # path mode, content on stdin
-    if [ -e "$1" ]; then note "kept    $1"; cat >/dev/null; return; fi
-    sed "s/@TAG@/$IMAGE_TAG/g; s/@REPO@/${REPO#*/}/g" > "$1"; chmod "$2" "$1"; ok "created $1"
-}
-write_stub .claude/sandbox/build.sh 755 <<'EOF2'
-#!/usr/bin/env bash
-# Builds this project's sandbox image from plugin.sh. Usage: .claude/sandbox/build.sh
-# Then start it with run.sh or start.sh in this directory.
-set -euo pipefail
-
-THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-export PLUGINS="${THIS_SCRIPT_DIR}/plugin.sh"
-export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
-
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
-EOF2
-write_stub .claude/sandbox/run.sh 755 <<'EOF2'
-#!/usr/bin/env bash
-# Starts this project's sandbox interactively. Usage: .claude/sandbox/run.sh [claude args]
-set -euo pipefail
-
-cd "$(dirname "${BASH_SOURCE[0]}")/../.."
-export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
-
-# Name the container cs-<repo>, or cs-<repo>-2, -3... while another is running.
-# A stopped container with the chosen name is removed, so every run is fresh
-# (and CS_DOCKER_FLAGS may include --restart, which cannot be combined with --rm).
-if [ -z "${CS_CONTAINER_NAME:-}" ]; then
-    CS_CONTAINER_NAME="cs-@TAG@"
-    n=1
-    while [ "$(docker inspect -f '{{.State.Running}}' "$CS_CONTAINER_NAME" 2>/dev/null || true)" = true ]; do
-        n=$((n + 1)); CS_CONTAINER_NAME="cs-@TAG@-$n"
-    done
-    docker rm "$CS_CONTAINER_NAME" >/dev/null 2>&1 || true
-    export CS_CONTAINER_NAME
-fi
-
-exec /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox --name "@REPO@" "$@"
-EOF2
-write_stub .claude/sandbox/start.sh 755 <<'EOF2'
-#!/usr/bin/env bash
-# Starts this project's sandbox in the background; claude waits on a detached tty.
-# Usage: .claude/sandbox/start.sh [claude args]
-set -euo pipefail
-
-cd "$(dirname "${BASH_SOURCE[0]}")/../.."
-export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
-NAME="${CS_CONTAINER_NAME:-cs-@TAG@}"
-export CS_CONTAINER_NAME="$NAME"
-
-# Each start creates a fresh container, so changed variables and flags always
-# apply. No --rm: it cannot be combined with --restart in CS_DOCKER_FLAGS.
-if [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || true)" = true ]; then
-    echo "$NAME is already running"
-else
-    docker rm "$NAME" >/dev/null 2>&1 || true   # a stopped one from an earlier start
-    CS_DOCKER_FLAGS="-d -t ${CS_DOCKER_FLAGS:-}" \
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox --name "@REPO@" "$@" >/dev/null
-    echo "started $NAME"
-fi
-printf '\nAttach (detach with ctrl-p ctrl-q):\n\ndocker attach %s\n\nStop:\n\ndocker stop %s\n' "$NAME" "$NAME"
-EOF2
-write_stub .claude/sandbox/plugin.sh 644 <<'EOF2'
-#!/usr/bin/env bash
-# Runs as root while this project's sandbox image is built (see build.sh).
-# PLUGINS_DIR points at claude-sandbox's built-in plugins.
-set -euo pipefail
-
-# Built-in plugins:
-# "${PLUGINS_DIR}/languages/go.sh"
-# "${PLUGINS_DIR}/tools/docker.sh"
-
-# Project-specific packages:
-# apt-get update && apt-get install -y --no-install-recommends <packages>
-EOF2
+mkdir -p "$STUB_OUT"
+HASHES=""
+for name in $STUB_NAMES; do
+    dest="$STUB_OUT/$name"
+    if [ ! -e "$dest" ]; then
+        ok "created $dest"; install_stub "$name"
+    elif cmp -s "$STUB_DIR/$name" "$dest"; then
+        note "up to date $dest"
+    elif stub_in "$name" "$STUB_WRITE"; then
+        ok "replaced $dest"; install_stub "$name"
+    else
+        note "kept    $dest"
+    fi
+    # Remember the template each file was last in sync with, to tell a stale
+    # copy from one that was edited.
+    if cmp -s "$STUB_DIR/$name" "$dest"; then
+        HASHES="$HASHES$name $(file_hash "$STUB_DIR/$name")"$'\n'
+    elif [ -n "$(recorded_hash "$name")" ]; then
+        HASHES="$HASHES$name $(recorded_hash "$name")"$'\n'
+    fi
+done
+printf '%s' "$HASHES" > "$STUB_OUT/.init-hashes"
 
 # --- launcher settings in .envrc ---------------------------------------------
 # Add any CS_ launcher variable that .envrc does not mention yet, with its default;
