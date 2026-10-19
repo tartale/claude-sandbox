@@ -140,7 +140,8 @@ stub_mode() { if [ "$1" = plugin.sh ]; then echo 644; else echo 755; fi; }
 install_stub() { cp "$STUB_DIR/$1" "$STUB_OUT/$1"; chmod "$(stub_mode "$1")" "$STUB_OUT/$1"; }
 stub_in() { case " $2 " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 file_hash() { if command -v sha256sum >/dev/null; then sha256sum < "$1"; else shasum -a 256 < "$1"; fi | cut -d' ' -f1; }
-recorded_hash() { sed -n "s/^$1 //p" "$STUB_OUT/.init-hashes" 2>/dev/null | head -n 1; }
+# .init-hashes holds "<name> <hash of what was last written> <hash of the template at the last run>".
+recorded_field() { awk -v n="$1" -v f="$2" '$1 == n { print $f }' "$STUB_OUT/.init-hashes" 2>/dev/null | head -n 1; }
 render_stub build.sh <<'EOF2'
 #!/usr/bin/env bash
 # Builds this project's sandbox image from plugin.sh. Usage: .claude/sandbox/build.sh
@@ -219,19 +220,23 @@ EOF2
 say "Questions"
 DO_TOKEN=0; DO_REGISTRY=0; DO_RULESET=0
 
-# A stub that differs from the current template. If it is exactly what this
-# script last wrote (unedited), it is updated without asking: nothing of yours
-# is lost. If it was edited (or there is no record), ask; Enter shows the diff
-# first, then the question repeats with No as the default.
+# A stub that differs from the current template:
+#   - exactly what this script last wrote (unedited): updated without asking,
+#     since nothing of yours is lost;
+#   - edited, and the template is unchanged since the last run: left alone, so
+#     a file you maintain (plugin.sh) is not a prompt on every run;
+#   - edited, and the template changed (or there is no record): ask. Enter shows
+#     the diff first, then the question repeats with No as the default.
 STUB_WRITE=""
 for name in $STUB_NAMES; do
     dest="$STUB_OUT/$name"
     [ -e "$dest" ] || continue
     cmp -s "$STUB_DIR/$name" "$dest" && continue
-    if [ "$(recorded_hash "$name")" = "$(file_hash "$dest")" ]; then
+    if [ "$(recorded_field "$name" 2)" = "$(file_hash "$dest")" ]; then
         STUB_WRITE="$STUB_WRITE $name"
         continue
     fi
+    [ "$(recorded_field "$name" 3)" = "$(file_hash "$STUB_DIR/$name")" ] && continue
     shown=0
     while :; do
         if [ "$shown" = 0 ]; then hint="[D/y/n]"; else hint="[y/N]"; fi
@@ -299,13 +304,11 @@ for name in $STUB_NAMES; do
     else
         note "kept    $dest"
     fi
-    # Remember the template each file was last in sync with, to tell a stale
-    # copy from one that was edited.
-    if cmp -s "$STUB_DIR/$name" "$dest"; then
-        HASHES="$HASHES$name $(file_hash "$STUB_DIR/$name")"$'\n'
-    elif [ -n "$(recorded_hash "$name")" ]; then
-        HASHES="$HASHES$name $(recorded_hash "$name")"$'\n'
-    fi
+    # Remember what was last written and the template seen, to tell a stale copy
+    # from an edited one and to notice when the template itself changes.
+    if cmp -s "$STUB_DIR/$name" "$dest"; then written=$(file_hash "$dest")
+    else written=$(recorded_field "$name" 2); fi
+    HASHES="$HASHES$name ${written:--} $(file_hash "$STUB_DIR/$name")"$'\n'
 done
 printf '%s' "$HASHES" > "$STUB_OUT/.init-hashes"
 
