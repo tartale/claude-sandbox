@@ -31,7 +31,7 @@ docker attach cs-<repo-name>   # detach again with ctrl-p ctrl-q
 docker stop cs-<repo-name>
 ```
 
-If the container already exists, `start.sh` reuses it instead of creating another. Override either name with `CS_CONTAINER_NAME`; `claude-sandbox.sh` on its own appends a random suffix.
+If the container is already running, `start.sh` says so and leaves it. Each start creates a new container, removed when it stops (`--rm`), so changed variables and flags always apply. Override either name with `CS_CONTAINER_NAME`; `claude-sandbox.sh` on its own appends a random suffix.
 
 ### Passing arguments to Claude
 
@@ -41,7 +41,7 @@ Both scripts forward their arguments to `claude`:
 .claude/sandbox/run.sh --continue   # or --resume, or any other claude flag
 ```
 
-For `start.sh` the arguments apply when the container is created; if it already exists it is reused as it was started.
+For `start.sh` the arguments apply to the container it starts; a container that is already running is left as it is.
 
 ### Using a specific image tag
 

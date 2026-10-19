@@ -214,13 +214,16 @@ export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
 NAME="${CS_CONTAINER_NAME:-cs-@TAG@}"
 export CS_CONTAINER_NAME="$NAME"
 
-case "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || true)" in
-    true)  echo "$NAME is already running" ;;
-    false) docker start "$NAME" >/dev/null; echo "restarted $NAME" ;;
-    *)     CS_DOCKER_FLAGS="-d -t ${CS_DOCKER_FLAGS:-}" \
-               /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox --name "@REPO@" "$@" >/dev/null
-           echo "started $NAME" ;;
-esac
+# Each start creates a fresh container (--rm removes it on stop), so changed
+# variables and flags always apply.
+if [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || true)" = true ]; then
+    echo "$NAME is already running"
+else
+    docker rm "$NAME" >/dev/null 2>&1 || true   # a stopped one created without --rm
+    CS_DOCKER_FLAGS="-d -t --rm ${CS_DOCKER_FLAGS:-}" \
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox --name "@REPO@" "$@" >/dev/null
+    echo "started $NAME"
+fi
 printf '\nAttach (detach with ctrl-p ctrl-q):\n\ndocker attach %s\n\nStop:\n\ndocker stop %s\n' "$NAME" "$NAME"
 EOF2
 write_stub .claude/sandbox/plugin.sh 644 <<'EOF2'
