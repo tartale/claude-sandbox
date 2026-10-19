@@ -209,26 +209,28 @@ EOF2
 say "Questions"
 DO_TOKEN=0; DO_REGISTRY=0; DO_RULESET=0
 
-# A stub that differs from the current template: offer to replace it. If it is
-# the copy this script last wrote (unedited), replacing is safe, so that is the
-# default; if it was edited, the default is to keep it. d shows the diff.
+# A stub that differs from the current template. If it is exactly what this
+# script last wrote (unedited), it is updated without asking: nothing of yours
+# is lost. If it was edited (or there is no record), ask; Enter shows the diff
+# first, then the question repeats with No as the default.
 STUB_WRITE=""
 for name in $STUB_NAMES; do
     dest="$STUB_OUT/$name"
     [ -e "$dest" ] || continue
     cmp -s "$STUB_DIR/$name" "$dest" && continue
     if [ "$(recorded_hash "$name")" = "$(file_hash "$dest")" ]; then
-        def=Y; why="a newer template exists; your copy is unmodified"
-    else
-        def=N; why="it differs from the template and looks edited"
+        STUB_WRITE="$STUB_WRITE $name"
+        continue
     fi
+    shown=0
     while :; do
-        read -r -p "  Replace $dest? ($why) [$([ "$def" = Y ] && echo Y/n/d || echo y/N/d)] " a
+        if [ "$shown" = 0 ]; then hint="[d/y/N]"; else hint="[y/N]"; fi
+        read -r -p "  $dest differs from the template and looks edited. Replace it? $hint " a
         case "$a" in
-            [Dd]*) diff -u "$dest" "$STUB_DIR/$name" || true ;;
-            [Yy]*) STUB_WRITE="$STUB_WRITE $name"; break ;;
-            [Nn]*) break ;;
-            "") [ "$def" = Y ] && STUB_WRITE="$STUB_WRITE $name"; break ;;
+            [Dd]*)  diff -u "$dest" "$STUB_DIR/$name" || true; shown=1 ;;
+            [Yy]*)  STUB_WRITE="$STUB_WRITE $name"; break ;;
+            [Nn]*)  break ;;
+            "")     if [ "$shown" = 0 ]; then diff -u "$dest" "$STUB_DIR/$name" || true; shown=1; else break; fi ;;
         esac
     done
 done
