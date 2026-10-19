@@ -155,6 +155,8 @@ CS_DOCKER_FLAGS="-v /var/run/docker.sock:/var/run/docker.sock" ./claude-sandbox.
 
 Mounting the socket gives the sandbox root on the host (it can start privileged containers), so the launcher prints a warning when it sees one.
 
+This is an accepted risk, not a safeguarded feature: nothing filters what the agent asks the daemon to do. Mount the socket only in a sandbox whose job needs it (for example an SRE sandbox that rebuilds and restarts the service it owns), never in a general development sandbox, and keep that sandbox's project to one you trust. The launch scripts in `.claude/sandbox` are mounted read-only so the agent cannot add the mount to a launch that did not have it.
+
 The Playwright plugin bakes in the browsers *and* the system libraries they need — the part a plain
 `npm install playwright` inside a running sandbox can't do, since installing those libraries needs
 root. Browsers land in `/ms-playwright` with `PLAYWRIGHT_BROWSERS_PATH` exported for every shell, so
@@ -396,7 +398,7 @@ The `.env` file follows standard `KEY=VALUE` format. Variables not listed in the
 
 The file is read as data and never run as shell. `$VAR` and `${VAR}` are expanded from your host environment using `envsubst` (macOS: `brew install gettext && brew link --force gettext`; Debian/Ubuntu: `sudo apt-get install gettext-base`), and the result is passed to `docker run --env-file`. Only variables your host exports are expanded, so a literal `$` in a secret is left alone. Command substitution (`$(...)`, backticks) is not run; the launcher warns and passes the text through unchanged. Launcher settings (`CS_*`) belong in your shell environment, not in `.env`.
 
-The env file, `.envrc` and `.git/hooks` are mounted read-only inside the container, because they run on the host later (when you launch, `cd` with direnv, or commit) and an agent must not be able to plant code in them. Edit them from the host. `.git/config` stays writable, so review `git diff` and `.git/config` before running host-side tooling on a checkout an agent has touched.
+The env file, `.envrc`, `.git/hooks` and `.claude/sandbox/{build,run,start}.sh` are mounted read-only inside the container, because they run on the host later (when you launch, `cd` with direnv, or commit) and an agent must not be able to plant code in them. Edit them from the host. `.claude/sandbox/plugin.sh` stays writable so the agent can maintain the project's dependencies; it only runs inside the image build, but read its `git diff` before running `build.sh`. `.git/config` stays writable, so review `git diff` and `.git/config` before running host-side tooling on a checkout an agent has touched.
 
 To use a different file name, set `CS_ENV_FILE`:
 

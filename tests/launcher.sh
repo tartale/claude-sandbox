@@ -93,6 +93,14 @@ check ".git/hooks is mounted read-only" has "ARG:${WORK}/proj/.git/hooks:/worksp
 check ".envrc is mounted read-only" has "ARG:${WORK}/proj/.envrc:/workspace/.envrc:ro"
 check ".env is mounted read-only" has "ARG:${WORK}/proj/.env:/workspace/.env:ro"
 
+mkdir -p "${WORK}/proj/.claude/sandbox"
+touch "${WORK}/proj/.claude/sandbox/run.sh" "${WORK}/proj/.claude/sandbox/start.sh" "${WORK}/proj/.claude/sandbox/plugin.sh"
+run_launcher
+check "run.sh is mounted read-only" has "ARG:${WORK}/proj/.claude/sandbox/run.sh:/workspace/.claude/sandbox/run.sh:ro"
+check "start.sh is mounted read-only" has "ARG:${WORK}/proj/.claude/sandbox/start.sh:/workspace/.claude/sandbox/start.sh:ro"
+check "build.sh (absent) is not mounted" lacks "ARG:${WORK}/proj/.claude/sandbox/build.sh:/workspace/.claude/sandbox/build.sh:ro"
+check "plugin.sh stays writable" lacks "ARG:${WORK}/proj/.claude/sandbox/plugin.sh:/workspace/.claude/sandbox/plugin.sh:ro"
+
 # --- env file ---------------------------------------------------------------
 if "${REAL_ENVSUBST}"; then
     reset_project

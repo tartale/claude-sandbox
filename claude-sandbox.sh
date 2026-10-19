@@ -63,13 +63,17 @@ expand_env_file() {
     envsubst "$(printf '${%s} ' $(compgen -e))" < "$CS_ENV_FILE"
 }
 
-# Files the user later runs on the host (git hooks, direnv, the env file)
+# Files the user later runs on the host (git hooks, direnv, the env file, the
+# .claude/sandbox launch scripts; plugin.sh stays writable)
 # are mounted read-only so the agent cannot plant code in them.
 # Only paths that already exist are mounted; Docker would otherwise create them
 # as empty directories on the host.
 PROTECT_ARGS=()
 [ -d "$(pwd)/.git/hooks" ] && PROTECT_ARGS+=(-v "$(pwd)/.git/hooks:/workspace/.git/hooks:ro")
 [ -f "$(pwd)/.envrc" ] && PROTECT_ARGS+=(-v "$(pwd)/.envrc:/workspace/.envrc:ro")
+for script in build run start; do
+    [ -f "$(pwd)/.claude/sandbox/${script}.sh" ] && PROTECT_ARGS+=(-v "$(pwd)/.claude/sandbox/${script}.sh:/workspace/.claude/sandbox/${script}.sh:ro")
+done
 case "$CS_ENV_FILE" in
   "$(pwd)"/*) [ -f "$CS_ENV_FILE" ] && PROTECT_ARGS+=(-v "$CS_ENV_FILE:/workspace/${CS_ENV_FILE#"$(pwd)"/}:ro") ;;
 esac
