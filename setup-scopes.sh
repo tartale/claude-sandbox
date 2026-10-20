@@ -4,7 +4,7 @@
 #   project scope -> /workspace/.claude/        committed with the project, so
 #                                               it travels via git pull
 #   user scope    -> /home/claude/.claude-user  a private repo, bind-mounted
-#                                               from the host or cloned read-only,
+#                                               from the host or cloned,
 #                                               so it follows the user between
 #                                               machines
 #

@@ -152,16 +152,12 @@ check "CS_DOCKER_LOGIN mounts the config read-only" has "ARG:${WORK}/home/.docke
 run_launcher CS_USER_CONFIG_REPO=a/b; rc=$?
 check "CS_USER_CONFIG_REPO without a token is an error" test "${rc}" -ne 0
 run_launcher CS_USER_CONFIG_REPO=a/b CS_USER_CONFIG_TOKEN=t CS_USER_CONFIG="${WORK}/uc"; rc=$?
-check "read-only and mounted user config together is an error" test "${rc}" -ne 0
+check "cloned and mounted user config together is an error" test "${rc}" -ne 0
 run_launcher CS_USER_CONFIG_REPO=a/b CS_USER_CONFIG_TOKEN=t; rc=$?
 check "repo plus token passes both names through" test "${rc}" -eq 0
 check "  ...the repo" has "ARG:CS_USER_CONFIG_REPO"
 check "  ...the token (by name, never its value)" has "ARG:CS_USER_CONFIG_TOKEN"
 check "  ...without mounting a checkout" lacks "ARG:${WORK}/uc:/home/claude/.claude-user"
-run_launcher CS_USER_CONFIG_WRITE=true; rc=$?
-check "CS_USER_CONFIG_WRITE without a repo and token is an error" test "${rc}" -ne 0
-run_launcher CS_USER_CONFIG_REPO=a/b CS_USER_CONFIG_TOKEN=t CS_USER_CONFIG_WRITE=true
-check "CS_USER_CONFIG_WRITE is passed through by name" has "ARG:CS_USER_CONFIG_WRITE"
 
 # --- container name ---------------------------------------------------------
 run_launcher CS_CONTAINER_NAME=my-box

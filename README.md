@@ -319,33 +319,18 @@ claude-user-sync "Prefer pnpm"        # with a message
 
 Then `git pull` in the checkout on your other machine, or just start a sandbox there — the pull happens automatically.
 
-#### Read-only user scope
+#### Cloned user scope
 
-A mounted checkout is writable, and the container pushes with the sandbox's GitHub token, so a compromised session could rewrite the rules every future session starts from. To close that off, don't mount the repo. Give the sandbox a second token that can only read it:
+A mounted checkout is writable, and the container pushes with the sandbox's GitHub token, so a compromised session could rewrite the rules every future session starts from. To close that off, don't mount the repo. Give the sandbox a token for only that repo, and require a pull request to change `main`:
 
 ```bash
 export CS_USER_CONFIG_REPO=you/claude-user
-export CS_USER_CONFIG_TOKEN=github_pat_...   # fine-grained, only that repo, Contents: Read-only
-```
-
-At start the entrypoint clones the repo into the container, uses the token for that one command, and removes it from the environment before Claude starts. The clone has no remote and vanishes with the container. `claude-user-sync` commits locally and writes `.tmp/claude-user.patch` in the project; review it and apply it from your own checkout:
-
-```bash
-git -C ~/.claude-user am < .tmp/claude-user.patch && git -C ~/.claude-user push
-```
-
-Don't grant the project's sandbox token access to the user config repo, or the protection is moot. Set these two variables in your shell, not in `.env`.
-
-##### Updating through a pull request
-
-To skip the patch step, let the session open a PR instead:
-
-```bash
-export CS_USER_CONFIG_WRITE=true   # the token below can push
 export CS_USER_CONFIG_TOKEN=github_pat_...   # fine-grained, only that repo, Contents and Pull requests: Read and write
 ```
 
-The token then stays in the environment and the clone keeps its `origin`. `claude-user-sync` pushes a `sandbox/<timestamp>` branch and opens a PR against `main`; you merge it on GitHub. The token can push any branch, so add a ruleset on the repo that requires a pull request to change `main`. Without one, a compromised session can rewrite your rules directly, which is the exposure the read-only setup removes.
+At start the entrypoint clones the repo into the container. `claude-user-sync` commits locally, pushes a `sandbox/<timestamp>` branch and opens a PR against `main`; you merge it on GitHub, and other machines pick it up on their next start. The clone vanishes with the container.
+
+The token can push any branch, so add a ruleset on the repo that requires a pull request to change `main`. Without one, a compromised session can rewrite your rules directly, which is the exposure this setup removes. Don't grant the project's sandbox token access to the user config repo either, or the protection is moot. Set these two variables in your shell, not in `.env`.
 
 ### Which scope does something belong in?
 
@@ -384,10 +369,9 @@ If you previously hand-symlinked the memory directory into a project, drop the s
 | `CS_ENV_FILE` | Path to an env file to pass into the container (default: `.env`) |
 | `LANGUAGE_VERSIONS` | Space-separated list of language versions in `<language>-<version>` format (e.g. `"go-1.25.10"`). Each plugin extracts its own entry; omitted plugins default to latest stable. |
 | `PLUGINS` | Path to a plugin script or directory of plugin scripts to install |
-| `CS_USER_CONFIG` | Path to a checkout of your user config repo (user-scope rules and memories). Unset disables the user scope. Read-write; see below for a read-only alternative. |
-| `CS_USER_CONFIG_REPO` | `owner/name` of your user config repo, cloned read-only into the container at start. Requires `CS_USER_CONFIG_TOKEN`; mutually exclusive with `CS_USER_CONFIG`. See [Read-only user scope](#read-only-user-scope). |
-| `CS_USER_CONFIG_TOKEN` | Fine-grained token for that one repo, read-only Contents by default. Removed from the environment before Claude starts unless `CS_USER_CONFIG_WRITE=true`. |
-| `CS_USER_CONFIG_WRITE` | `true` when the token can push: it stays in the environment and `claude-user-sync` opens a PR instead of writing a patch. Requires `CS_USER_CONFIG_REPO`. Pair it with a ruleset requiring a PR on `main`. |
+| `CS_USER_CONFIG` | Path to a checkout of your user config repo (user-scope rules and memories). Unset disables the user scope. Read-write; see below for a safer alternative. |
+| `CS_USER_CONFIG_REPO` | `owner/name` of your user config repo, cloned into the container at start. Requires `CS_USER_CONFIG_TOKEN`; mutually exclusive with `CS_USER_CONFIG`. See [Cloned user scope](#cloned-user-scope). |
+| `CS_USER_CONFIG_TOKEN` | Fine-grained token for that one repo (Contents and Pull requests: Read and write). `claude-user-sync` uses it to open a PR; require a PR on `main` so it cannot change the rules directly. |
 | `CS_DOCKER_LOGIN` | Set to `true` to mount the host's `~/.docker/config.json` (or `$DOCKER_CONFIG/config.json`) read-only so the container's docker CLI can use your registry logins. Off by default; the credentials are readable by anything in the container. Logins held in a credential helper (`credsStore`, e.g. macOS Keychain) are not available in the container. |
 | `CS_PIDS_LIMIT` | Maximum number of processes in the container (`docker run --pids-limit`). Unset means no limit. |
 | `CS_MEMORY` | Memory limit for the container (`docker run --memory`, e.g. `8g`). Unset means no limit. |
