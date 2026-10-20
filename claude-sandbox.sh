@@ -71,7 +71,7 @@ expand_env_file() {
 PROTECT_ARGS=()
 [ -d "$(pwd)/.git/hooks" ] && PROTECT_ARGS+=(-v "$(pwd)/.git/hooks:/workspace/.git/hooks:ro")
 [ -f "$(pwd)/.envrc" ] && PROTECT_ARGS+=(-v "$(pwd)/.envrc:/workspace/.envrc:ro")
-for script in build run start apply-user-patch; do
+for script in build run start user; do
     [ -f "$(pwd)/.claude/sandbox/${script}.sh" ] && PROTECT_ARGS+=(-v "$(pwd)/.claude/sandbox/${script}.sh:/workspace/.claude/sandbox/${script}.sh:ro")
 done
 case "$CS_ENV_FILE" in
