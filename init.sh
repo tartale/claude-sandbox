@@ -254,12 +254,16 @@ case "${1:-apply}" in
         git apply --stat "$PATCH"
         echo
         echo "It changes the rules and memories every future session starts from. Read it before applying."
+        # Enter shows the diff first; after that, Enter declines.
+        shown=0
         while :; do
-            read -r -p "Apply and push to $CHECKOUT? [y/N/d] " a
+            if [ "$shown" = 0 ]; then hint="[y/n/D]"; else hint="[y/N/d]"; fi
+            read -r -p "Apply and push to $CHECKOUT? $hint " a
             case "$a" in
-                [Dd]*) page_patch ;;
+                [Dd]*) page_patch; shown=1 ;;
                 [Yy]*) break ;;
-                *)     echo "not applied"; exit 1 ;;
+                [Nn]*) echo "not applied"; exit 1 ;;
+                "")    if [ "$shown" = 0 ]; then page_patch; shown=1; else echo "not applied"; exit 1; fi ;;
             esac
         done
         git -C "$CHECKOUT" pull --ff-only --quiet
