@@ -142,6 +142,8 @@ install_stub() { cp "$STUB_DIR/$1" "$STUB_OUT/$1"; chmod "$(stub_mode "$1")" "$S
 stub_in() { case " $2 " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 file_hash() { if command -v sha256sum >/dev/null; then sha256sum < "$1"; else shasum -a 256 < "$1"; fi | cut -d' ' -f1; }
 # .init-hashes holds "<name> <hash of what was last written> <hash of the template at the last run>".
+# The template as of the last run, kept so a changed template can be merged into an edited stub.
+can_merge() { [ -f "$STUB_OUT/.init-base/$1" ] && [ "$(recorded_field "$1" 3)" = "$(file_hash "$STUB_OUT/.init-base/$1")" ]; }
 recorded_field() { awk -v n="$1" -v f="$2" '$1 == n { print $f }' "$STUB_OUT/.init-hashes" 2>/dev/null | head -n 1; }
 render_stub build.sh <<'EOF2'
 #!/usr/bin/env bash
@@ -236,8 +238,11 @@ DO_TOKEN=0; DO_REGISTRY=0; DO_RULESET=0
 #   - edited, and the template is unchanged since the last run: left alone, so
 #     a file you maintain (plugin.sh) is not a prompt on every run;
 #   - edited, and the template changed (or there is no record): ask. Enter shows
-#     the diff first, then the question repeats with No as the default.
+#     the diff first, then the question repeats with No as the default. When the
+#     template text from the last run is on hand (.init-base), m merges your
+#     edits into the new template.
 STUB_WRITE=""
+STUB_MERGE=""
 for name in $STUB_NAMES; do
     dest="$STUB_OUT/$name"
     [ -e "$dest" ] || continue
@@ -247,12 +252,14 @@ for name in $STUB_NAMES; do
         continue
     fi
     [ "$(recorded_field "$name" 3)" = "$(file_hash "$STUB_DIR/$name")" ] && continue
-    shown=0
+    shown=0; m=""; mq=""
+    if can_merge "$name"; then m="/m"; mq=" or merge your edits into it"; fi
     while :; do
-        if [ "$shown" = 0 ]; then hint="[y/n/D]"; else hint="[y/N/d]"; fi
-        read -r -p "  $dest differs from the template and looks edited. Replace it? $hint " a
+        if [ "$shown" = 0 ]; then hint="[y/n$m/D]"; else hint="[y/N$m/d]"; fi
+        read -r -p "  $dest differs from the template and looks edited. Replace it$mq? $hint " a
         case "$a" in
             [Dd]*)  show_diff "$dest" "$STUB_DIR/$name"; shown=1 ;;
+            [Mm]*)  if [ -n "$m" ]; then STUB_WRITE="$STUB_WRITE $name"; STUB_MERGE="$STUB_MERGE $name"; break; fi ;;
             [Yy]*)  STUB_WRITE="$STUB_WRITE $name"; break ;;
             [Nn]*)  break ;;
             "")     if [ "$shown" = 0 ]; then show_diff "$dest" "$STUB_DIR/$name"; shown=1; else break; fi ;;
@@ -318,7 +325,16 @@ for name in $STUB_NAMES; do
         if git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q "$backup"; then
             echo "$STUB_OUT/*.bak.*" >> "$(git rev-parse --git-dir)/info/exclude"
         fi
-        ok "replaced $dest"; install_stub "$name"
+        if stub_in "$name" "$STUB_MERGE"; then
+            if git merge-file -p "$dest" "$STUB_OUT/.init-base/$name" "$STUB_DIR/$name" > "$STUB_DIR/$name.merged"; then
+                ok "merged   $dest"
+            else
+                warn "merged $dest with conflicts; resolve the <<<<<<< markers"
+            fi
+            cat "$STUB_DIR/$name.merged" > "$dest"
+        else
+            ok "replaced $dest"; install_stub "$name"
+        fi
     else
         note "kept    $dest"
     fi
@@ -327,6 +343,8 @@ for name in $STUB_NAMES; do
     if cmp -s "$STUB_DIR/$name" "$dest"; then written=$(file_hash "$dest")
     else written=$(recorded_field "$name" 2); fi
     HASHES="$HASHES$name ${written:--} $(file_hash "$STUB_DIR/$name")"$'\n'
+    mkdir -p "$STUB_OUT/.init-base"
+    cp "$STUB_DIR/$name" "$STUB_OUT/.init-base/$name"
 done
 printf '%s' "$HASHES" > "$STUB_OUT/.init-hashes"
 
