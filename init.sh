@@ -131,7 +131,7 @@ ok "repo $REPO"
 # --- stub templates, rendered to a temp dir so they can be compared ------------
 IMAGE_TAG=$(printf '%s' "${REPO#*/}" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_.\n-' '-')
 STUB_OUT=.claude/sandbox
-STUB_NAMES="build.sh run.sh start.sh user.sh plugin.sh"
+STUB_NAMES="build.sh run.sh start.sh sync.sh plugin.sh"
 STUB_DIR=$(mktemp -d)
 trap 'rm -rf "$STUB_DIR"' EXIT
 render_stub() {   # name, content on stdin
@@ -204,10 +204,10 @@ else
 fi
 printf '\nAttach (detach with ctrl-p ctrl-q):\n\ndocker attach %s\n\nStop:\n\ndocker stop %s\n' "$NAME" "$NAME"
 EOF2
-render_stub user.sh <<'EOF2'
+render_stub sync.sh <<'EOF2'
 #!/usr/bin/env bash
 # Handles the patch a sandbox session wrote with claude-user-sync (user-scope rules
-# and memories). Usage: .claude/sandbox/user.sh [apply|show|status]
+# and memories). Usage: .claude/sandbox/sync.sh [apply|show|status]
 #   apply   (default) apply the patch to your claude-user checkout and push it
 #   show    page through the patch without applying it
 #   status  say whether a patch is waiting and which files it changes
@@ -248,7 +248,7 @@ case "${1:-apply}" in
         rm -f "$PATCH"
         ;;
     *)
-        echo "usage: user.sh [apply|show|status]" >&2
+        echo "usage: sync.sh [apply|show|status]" >&2
         exit 1
         ;;
 esac

@@ -27,7 +27,7 @@ if [ -z "$(git remote)" ]; then
     git format-patch --stdout refs/sandbox/base..HEAD > "${patch}"
     if [ -s "${patch}" ]; then
         echo "read-only user config: wrote ${patch}. Review it, then apply it from your claude-user checkout on the host:"
-        echo "      .claude/sandbox/user.sh   (or: git am < <project>/.tmp/claude-user.patch)"
+        echo "      .claude/sandbox/sync.sh   (or: git am < <project>/.tmp/claude-user.patch)"
     else
         echo "user config already up to date"
     fi
