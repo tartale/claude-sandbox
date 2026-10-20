@@ -20,10 +20,11 @@ if [ -n "$PLUGINS" ]; then
     install-plugins.sh "$PLUGINS"
 fi
 
-# User-scope config: cloned with a token scoped to that one repo. The token stays
-# in the environment so claude-user-sync can push a branch and open a PR; a
-# ruleset on the repo must require a PR to change main, so a session can propose
-# changes to the rules but never apply them.
+# User-scope config: cloned with the token of a separate bot account that has
+# read-only access to the repo. The token stays in the environment so
+# claude-user-sync can push to the bot's own fork and open a PR; the bot cannot
+# write to the repo itself, so a session can propose changes to the rules but
+# never apply them.
 if [ -n "$CS_USER_CONFIG_REPO" ]; then
     user_config=/home/claude/.claude-user
     if GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraheader \

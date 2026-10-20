@@ -321,16 +321,20 @@ Then `git pull` in the checkout on your other machine, or just start a sandbox t
 
 #### Cloned user scope
 
-A mounted checkout is writable, and the container pushes with the sandbox's GitHub token, so a compromised session could rewrite the rules every future session starts from. To close that off, don't mount the repo. Give the sandbox a token for only that repo, and require a pull request to change `main`:
+A mounted checkout is writable, and the container pushes with the sandbox's GitHub token, so a compromised session could rewrite the rules every future session starts from. To close that off, don't mount the repo. Give the sandbox a separate bot account that can only read it:
+
+1. Create a GitHub account for the sandbox (for example `you-sandbox-bot`).
+2. On the user config repo, turn on Settings, General, "Allow forking" if it is private, and add the bot as a collaborator with the **Read** role.
+3. As the bot, create a classic personal access token with the `repo` scope and a short expiry. The bot can only see this one repo, and it has no write access to it.
 
 ```bash
 export CS_USER_CONFIG_REPO=you/claude-user
-export CS_USER_CONFIG_TOKEN=github_pat_...   # fine-grained, only that repo, Contents and Pull requests: Read and write
+export CS_USER_CONFIG_TOKEN=ghp_...   # the bot's token
 ```
 
-At start the entrypoint clones the repo into the container. `claude-user-sync` commits locally, pushes a `sandbox/<timestamp>` branch and opens a PR against `main`; you merge it on GitHub, and other machines pick it up on their next start. The clone vanishes with the container.
+At start the entrypoint clones the repo into the container. `claude-user-sync` commits locally, pushes a `sandbox/<timestamp>` branch to the bot's own fork (created on the first sync) and opens a PR from it against `main`. You review and merge it on GitHub, and other machines pick it up on their next start. The clone vanishes with the container.
 
-The token can push any branch, so add a ruleset on the repo that requires a pull request to change `main`. Without one, a compromised session can rewrite your rules directly, which is the exposure this setup removes. Don't grant the project's sandbox token access to the user config repo either, or the protection is moot. Set these two variables in your shell, not in `.env`.
+The bot cannot write to the repo, so no branch protection is needed. Read the diff before you merge: the rules and memories in it are what every future session starts from. Don't grant the project's sandbox token access to the user config repo either, or the protection is moot. Set these two variables in your shell, not in `.env`.
 
 ### Which scope does something belong in?
 
@@ -371,7 +375,7 @@ If you previously hand-symlinked the memory directory into a project, drop the s
 | `PLUGINS` | Path to a plugin script or directory of plugin scripts to install |
 | `CS_USER_CONFIG` | Path to a checkout of your user config repo (user-scope rules and memories). Unset disables the user scope. Read-write; see below for a safer alternative. |
 | `CS_USER_CONFIG_REPO` | `owner/name` of your user config repo, cloned into the container at start. Requires `CS_USER_CONFIG_TOKEN`; mutually exclusive with `CS_USER_CONFIG`. See [Cloned user scope](#cloned-user-scope). |
-| `CS_USER_CONFIG_TOKEN` | Fine-grained token for that one repo (Contents and Pull requests: Read and write). `claude-user-sync` uses it to open a PR; require a PR on `main` so it cannot change the rules directly. |
+| `CS_USER_CONFIG_TOKEN` | Token of a bot account with read-only access to that repo. `claude-user-sync` uses it to push to the bot's fork and open a PR; it cannot write to the repo itself. |
 | `CS_DOCKER_LOGIN` | Set to `true` to mount the host's `~/.docker/config.json` (or `$DOCKER_CONFIG/config.json`) read-only so the container's docker CLI can use your registry logins. Off by default; the credentials are readable by anything in the container. Logins held in a credential helper (`credsStore`, e.g. macOS Keychain) are not available in the container. |
 | `CS_PIDS_LIMIT` | Maximum number of processes in the container (`docker run --pids-limit`). Unset means no limit. |
 | `CS_MEMORY` | Memory limit for the container (`docker run --memory`, e.g. `8g`). Unset means no limit. |
