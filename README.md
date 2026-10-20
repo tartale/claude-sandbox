@@ -336,6 +336,17 @@ git -C ~/.claude-user am < .tmp/claude-user.patch && git -C ~/.claude-user push
 
 Don't grant the project's sandbox token access to the user config repo, or the protection is moot. Set these two variables in your shell, not in `.env`.
 
+##### Updating through a pull request
+
+To skip the patch step, let the session open a PR instead:
+
+```bash
+export CS_USER_CONFIG_WRITE=true   # the token below can push
+export CS_USER_CONFIG_TOKEN=github_pat_...   # fine-grained, only that repo, Contents and Pull requests: Read and write
+```
+
+The token then stays in the environment and the clone keeps its `origin`. `claude-user-sync` pushes a `sandbox/<timestamp>` branch and opens a PR against `main`; you merge it on GitHub. The token can push any branch, so add a ruleset on the repo that requires a pull request to change `main`. Without one, a compromised session can rewrite your rules directly, which is the exposure the read-only setup removes.
+
 ### Which scope does something belong in?
 
 Ask whether it would still be true on a different project. "Run the full test suite before pushing" is user scope; "run `./actual test` before pushing" is project scope. Claude is given this rule in the generated `CLAUDE.md`, but it's worth knowing when you're filing things by hand.
@@ -375,7 +386,8 @@ If you previously hand-symlinked the memory directory into a project, drop the s
 | `PLUGINS` | Path to a plugin script or directory of plugin scripts to install |
 | `CS_USER_CONFIG` | Path to a checkout of your user config repo (user-scope rules and memories). Unset disables the user scope. Read-write; see below for a read-only alternative. |
 | `CS_USER_CONFIG_REPO` | `owner/name` of your user config repo, cloned read-only into the container at start. Requires `CS_USER_CONFIG_TOKEN`; mutually exclusive with `CS_USER_CONFIG`. See [Read-only user scope](#read-only-user-scope). |
-| `CS_USER_CONFIG_TOKEN` | Fine-grained token with read-only Contents access to that one repo. Removed from the environment before Claude starts. |
+| `CS_USER_CONFIG_TOKEN` | Fine-grained token for that one repo, read-only Contents by default. Removed from the environment before Claude starts unless `CS_USER_CONFIG_WRITE=true`. |
+| `CS_USER_CONFIG_WRITE` | `true` when the token can push: it stays in the environment and `claude-user-sync` opens a PR instead of writing a patch. Requires `CS_USER_CONFIG_REPO`. Pair it with a ruleset requiring a PR on `main`. |
 | `CS_DOCKER_LOGIN` | Set to `true` to mount the host's `~/.docker/config.json` (or `$DOCKER_CONFIG/config.json`) read-only so the container's docker CLI can use your registry logins. Off by default; the credentials are readable by anything in the container. Logins held in a credential helper (`credsStore`, e.g. macOS Keychain) are not available in the container. |
 | `CS_PIDS_LIMIT` | Maximum number of processes in the container (`docker run --pids-limit`). Unset means no limit. |
 | `CS_MEMORY` | Memory limit for the container (`docker run --memory`, e.g. `8g`). Unset means no limit. |

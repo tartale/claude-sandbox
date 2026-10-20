@@ -23,6 +23,9 @@ fi
 # Read-only user-scope config: cloned with a token that can read only that repo.
 # The token authenticates this one command and is dropped from the environment
 # before the agent starts, so it can read the rules but never push them.
+# With CS_USER_CONFIG_WRITE=true the token can also push, so it stays in the
+# environment and the clone keeps its origin: claude-user-sync opens a PR with it,
+# and a ruleset on the repo must require a PR to change main.
 if [ -n "$CS_USER_CONFIG_REPO" ]; then
     user_config=/home/claude/.claude-user
     if GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraheader \
@@ -31,13 +34,13 @@ if [ -n "$CS_USER_CONFIG_REPO" ]; then
         # No remote: nothing in the session can pull or push it. claude-user-sync
         # exports changes as a patch against this ref instead.
         git -C "$user_config" update-ref refs/sandbox/base HEAD
-        git -C "$user_config" remote remove origin
+        [ "$CS_USER_CONFIG_WRITE" = "true" ] || git -C "$user_config" remote remove origin
         chown -R claude:claude "$user_config"
     else
         echo "warning: could not clone ${CS_USER_CONFIG_REPO}; the user scope is disabled" >&2
     fi
 fi
-unset CS_USER_CONFIG_TOKEN
+[ "$CS_USER_CONFIG_WRITE" = "true" ] || unset CS_USER_CONFIG_TOKEN
 
 printf '[url "https://github.com/"]\n\tinsteadOf = git@github.com:\n' > /tmp/gitconfig
 if [ -n "$GITHUB_TOKEN" ]; then

@@ -104,7 +104,10 @@ if [ -n "${CS_USER_CONFIG_REPO}" ] || [ -n "${CS_USER_CONFIG_TOKEN}" ]; then
         echo "set either CS_USER_CONFIG (mount a checkout) or CS_USER_CONFIG_REPO (clone read-only), not both" >&2
         exit 1
     fi
-    USER_CONFIG_ARGS=(-e CS_USER_CONFIG_REPO -e CS_USER_CONFIG_TOKEN)
+    USER_CONFIG_ARGS=(-e CS_USER_CONFIG_REPO -e CS_USER_CONFIG_TOKEN -e CS_USER_CONFIG_WRITE)
+elif [ "${CS_USER_CONFIG_WRITE}" = "true" ]; then
+    echo "CS_USER_CONFIG_WRITE=true needs CS_USER_CONFIG_REPO and CS_USER_CONFIG_TOKEN" >&2
+    exit 1
 elif [ -n "${CS_USER_CONFIG}" ]; then
     if [ ! -d "${CS_USER_CONFIG}" ]; then
         echo "CS_USER_CONFIG=${CS_USER_CONFIG} does not exist. Clone your user config repo there:" >&2
