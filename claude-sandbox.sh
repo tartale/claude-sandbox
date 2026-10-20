@@ -101,7 +101,7 @@ if [ -n "${CS_USER_CONFIG_REPO}" ] || [ -n "${CS_USER_CONFIG_TOKEN}" ]; then
         exit 1
     fi
     if [ -n "${CS_USER_CONFIG}" ]; then
-        echo "set either CS_USER_CONFIG (mount a checkout) or CS_USER_CONFIG_REPO (clone read-only), not both" >&2
+        echo "set either CS_USER_CONFIG (mount a checkout) or CS_USER_CONFIG_REPO (clone), not both" >&2
         exit 1
     fi
     USER_CONFIG_ARGS=(-e CS_USER_CONFIG_REPO -e CS_USER_CONFIG_TOKEN)
