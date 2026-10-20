@@ -334,7 +334,7 @@ At start the entrypoint clones the repo into the container, uses the token for t
 .claude/sandbox/sync.sh
 ```
 
-`sync.sh show` pages through the patch and `sync.sh status` says whether one is waiting. `apply` (the default) shows what the patch changes (`v` opens the full diff), asks before applying, then runs `git am` in the checkout named by `CS_USER_CONFIG_CHECKOUT` (default `~/.claude-user`) and pushes. The script is mounted read-only in the sandbox like the other launch scripts, so a session cannot edit it.
+`sync.sh show` pages through the patch and `sync.sh status` says whether one is waiting. `apply` (the default) shows what the patch changes (`d` shows the colored diff), asks before applying, then runs `git am` in the checkout named by `CS_USER_CONFIG_CHECKOUT` (default `~/.claude-user`) and pushes. The script is mounted read-only in the sandbox like the other launch scripts, so a session cannot edit it.
 
 Don't grant the project's sandbox token access to the user config repo, or the protection is moot. Set these two variables in your shell, not in `.env`.
 

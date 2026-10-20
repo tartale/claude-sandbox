@@ -218,6 +218,26 @@ THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PATCH="${THIS_SCRIPT_DIR}/../../.tmp/claude-user.patch"
 CHECKOUT="${CS_USER_CONFIG_CHECKOUT:-$HOME/.claude-user}"
 
+# Colors only on a terminal, and never when NO_COLOR is set.
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    BOLD=$'\e[1m'; DIM=$'\e[2m'; RED=$'\e[31m'; GREEN=$'\e[32m'; CYAN=$'\e[36m'; RESET=$'\e[0m'
+else
+    BOLD=""; DIM=""; RED=""; GREEN=""; CYAN=""; RESET=""
+fi
+
+# The patch with additions in green, deletions in red and hunk headers in cyan.
+show_patch() {
+    awk -v b="$BOLD" -v r="$RED" -v g="$GREEN" -v c="$CYAN" -v d="$DIM" -v z="$RESET" '
+        /^(diff |index |--- |\+\+\+ |Subject: )/ { print b $0 z; next }
+        /^@@/                                   { print c $0 z; next }
+        /^-/                                    { print r $0 z; next }
+        /^\+/                                   { print g $0 z; next }
+                                                { print d $0 z }' "$PATCH"
+}
+page_patch() {
+    if [ -t 1 ]; then show_patch | LESS="${LESS:-R}" "${PAGER:-less}"; else show_patch; fi
+}
+
 [ -s "$PATCH" ] || { echo "no patch at $PATCH; nothing to do"; exit 0; }
 
 case "${1:-apply}" in
@@ -226,7 +246,7 @@ case "${1:-apply}" in
         git apply --stat "$PATCH"
         ;;
     show)
-        "${PAGER:-less}" "$PATCH"
+        page_patch
         ;;
     apply)
         [ -d "$CHECKOUT/.git" ] || { echo "$CHECKOUT is not a git checkout; set CS_USER_CONFIG_CHECKOUT" >&2; exit 1; }
@@ -235,9 +255,9 @@ case "${1:-apply}" in
         echo
         echo "It changes the rules and memories every future session starts from. Read it before applying."
         while :; do
-            read -r -p "Apply and push to $CHECKOUT? [y/N/v] " a
+            read -r -p "Apply and push to $CHECKOUT? [y/N/d] " a
             case "$a" in
-                [Vv]*) "${PAGER:-less}" "$PATCH" ;;
+                [Dd]*) page_patch ;;
                 [Yy]*) break ;;
                 *)     echo "not applied"; exit 1 ;;
             esac
