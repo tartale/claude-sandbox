@@ -131,7 +131,7 @@ ok "repo $REPO"
 # --- stub templates, rendered to a temp dir so they can be compared ------------
 IMAGE_TAG=$(printf '%s' "${REPO#*/}" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_.\n-' '-')
 STUB_OUT=.claude/sandbox
-STUB_NAMES="build.sh run.sh start.sh plugin.sh"
+STUB_NAMES="build.sh run.sh start.sh apply-user-patch.sh plugin.sh"
 STUB_DIR=$(mktemp -d)
 trap 'rm -rf "$STUB_DIR"' EXIT
 render_stub() {   # name, content on stdin
@@ -203,6 +203,38 @@ else
     echo "started $NAME"
 fi
 printf '\nAttach (detach with ctrl-p ctrl-q):\n\ndocker attach %s\n\nStop:\n\ndocker stop %s\n' "$NAME" "$NAME"
+EOF2
+render_stub apply-user-patch.sh <<'EOF2'
+#!/usr/bin/env bash
+# Applies the patch a sandbox session wrote (claude-user-sync) to your own
+# claude-user checkout and pushes it. Usage: .claude/sandbox/apply-user-patch.sh
+# CS_USER_CONFIG_CHECKOUT is that checkout (default: ~/.claude-user).
+set -euo pipefail
+
+THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PATCH="${THIS_SCRIPT_DIR}/../../.tmp/claude-user.patch"
+CHECKOUT="${CS_USER_CONFIG_CHECKOUT:-$HOME/.claude-user}"
+
+[ -s "$PATCH" ] || { echo "no patch at $PATCH; nothing to apply"; exit 0; }
+[ -d "$CHECKOUT/.git" ] || { echo "$CHECKOUT is not a git checkout; set CS_USER_CONFIG_CHECKOUT" >&2; exit 1; }
+
+echo "Patch from the sandbox:"
+git apply --stat "$PATCH"
+echo
+echo "It changes the rules and memories every future session starts from. Read it before applying."
+while :; do
+    read -r -p "Apply and push to $CHECKOUT? [y/N/v] " a
+    case "$a" in
+        [Vv]*) "${PAGER:-less}" "$PATCH" ;;
+        [Yy]*) break ;;
+        *)     echo "not applied"; exit 1 ;;
+    esac
+done
+
+git -C "$CHECKOUT" pull --ff-only --quiet
+git -C "$CHECKOUT" am < "$PATCH" || { git -C "$CHECKOUT" am --abort; echo "the patch does not apply; nothing changed" >&2; exit 1; }
+git -C "$CHECKOUT" push
+rm -f "$PATCH"
 EOF2
 render_stub plugin.sh <<'EOF2'
 #!/usr/bin/env bash

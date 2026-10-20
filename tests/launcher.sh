@@ -94,10 +94,11 @@ check ".envrc is mounted read-only" has "ARG:${WORK}/proj/.envrc:/workspace/.env
 check ".env is mounted read-only" has "ARG:${WORK}/proj/.env:/workspace/.env:ro"
 
 mkdir -p "${WORK}/proj/.claude/sandbox"
-touch "${WORK}/proj/.claude/sandbox/run.sh" "${WORK}/proj/.claude/sandbox/start.sh" "${WORK}/proj/.claude/sandbox/plugin.sh"
+touch "${WORK}/proj/.claude/sandbox/run.sh" "${WORK}/proj/.claude/sandbox/start.sh" "${WORK}/proj/.claude/sandbox/apply-user-patch.sh" "${WORK}/proj/.claude/sandbox/plugin.sh"
 run_launcher
 check "run.sh is mounted read-only" has "ARG:${WORK}/proj/.claude/sandbox/run.sh:/workspace/.claude/sandbox/run.sh:ro"
 check "start.sh is mounted read-only" has "ARG:${WORK}/proj/.claude/sandbox/start.sh:/workspace/.claude/sandbox/start.sh:ro"
+check "apply-user-patch.sh is mounted read-only" has "ARG:${WORK}/proj/.claude/sandbox/apply-user-patch.sh:/workspace/.claude/sandbox/apply-user-patch.sh:ro"
 check "build.sh (absent) is not mounted" lacks "ARG:${WORK}/proj/.claude/sandbox/build.sh:/workspace/.claude/sandbox/build.sh:ro"
 check "plugin.sh stays writable" lacks "ARG:${WORK}/proj/.claude/sandbox/plugin.sh:/workspace/.claude/sandbox/plugin.sh:ro"
 
@@ -152,7 +153,7 @@ check "CS_DOCKER_LOGIN mounts the config read-only" has "ARG:${WORK}/home/.docke
 run_launcher CS_USER_CONFIG_REPO=a/b; rc=$?
 check "CS_USER_CONFIG_REPO without a token is an error" test "${rc}" -ne 0
 run_launcher CS_USER_CONFIG_REPO=a/b CS_USER_CONFIG_TOKEN=t CS_USER_CONFIG="${WORK}/uc"; rc=$?
-check "cloned and mounted user config together is an error" test "${rc}" -ne 0
+check "read-only and mounted user config together is an error" test "${rc}" -ne 0
 run_launcher CS_USER_CONFIG_REPO=a/b CS_USER_CONFIG_TOKEN=t; rc=$?
 check "repo plus token passes both names through" test "${rc}" -eq 0
 check "  ...the repo" has "ARG:CS_USER_CONFIG_REPO"
