@@ -46,6 +46,15 @@ if [ -n "$GITHUB_TOKEN" ]; then
     chmod 700 /tmp/git-credential-github-token
     printf '[credential "https://github.com"]\n\thelper = /tmp/git-credential-github-token\n' >> /tmp/gitconfig
 fi
+# GIT_CONFIG_GLOBAL points at this file, which hides the host's ~/.gitconfig. Copy
+# only the identity: the rest of the host file (path rewrites, hooks paths) does
+# not apply in the container.
+git_name=$(git config -f /home/claude/.gitconfig user.name 2>/dev/null || true)
+git_email=$(git config -f /home/claude/.gitconfig user.email 2>/dev/null || true)
+if [ -n "$git_name" ] && [ -n "$git_email" ]; then
+    git config -f /tmp/gitconfig user.name "$git_name"
+    git config -f /tmp/gitconfig user.email "$git_email"
+fi
 chmod a+r /tmp/gitconfig
 
 CLAUDE_ARGS=$(printf '%q ' "$@")
