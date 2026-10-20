@@ -300,15 +300,13 @@ for name in $STUB_NAMES; do
     elif cmp -s "$STUB_DIR/$name" "$dest"; then
         note "up to date $dest"
     elif stub_in "$name" "$STUB_WRITE"; then
-        # An edited file the user chose to replace is backed up first; an
-        # unedited one (identical to what was last written) loses nothing.
-        if [ "$(recorded_field "$name" 2)" != "$(file_hash "$dest")" ]; then
-            backup="$dest.bak.$(date +%Y%m%d-%H%M%S)"
-            cp -p "$dest" "$backup"
-            note "backup  $backup"
-            if git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q "$backup"; then
-                echo "$STUB_OUT/*.bak.*" >> "$(git rev-parse --git-dir)/info/exclude"
-            fi
+        # Any file that is replaced is backed up first; the hash record is not
+        # trusted to say nothing of value is lost.
+        backup="$dest.bak.$(date +%Y%m%d-%H%M%S)"
+        cp -p "$dest" "$backup"
+        note "backup  $backup"
+        if git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q "$backup"; then
+            echo "$STUB_OUT/*.bak.*" >> "$(git rev-parse --git-dir)/info/exclude"
         fi
         ok "replaced $dest"; install_stub "$name"
     else
