@@ -99,21 +99,20 @@ mkdir -p "${CS_PROJECT_MEMORY}"
 # on its own).
 USER_CONFIG_ARGS=(-e CS_USER_CONFIG_REPO -e CS_USER_CONFIG_TOKEN)
 
-# Opt-in: share the host's docker registry logins (read-only) so the container's
-# docker CLI can pull and push private images. Anything in the container can read
-# these credentials.
+# Opt-in: CS_DOCKER_CONFIG names a docker config directory whose config.json (registry
+# logins) is shared read-only, so the container's docker CLI can pull and push private
+# images. Anything in the container can read these credentials.
 DOCKER_LOGIN_ARGS=()
-if [ "${CS_DOCKER_LOGIN}" = "true" ]; then
-    CS_DOCKER_CONFIG="${DOCKER_CONFIG:-${HOME}/.docker}/config.json"
-    if [ ! -f "${CS_DOCKER_CONFIG}" ]; then
-        echo "CS_DOCKER_LOGIN=true but ${CS_DOCKER_CONFIG} does not exist. Log in first:" >&2
-        echo "      docker login" >&2
+if [ -n "${CS_DOCKER_CONFIG}" ]; then
+    if [ ! -f "${CS_DOCKER_CONFIG}/config.json" ]; then
+        echo "CS_DOCKER_CONFIG=${CS_DOCKER_CONFIG} has no config.json. Log in first:" >&2
+        echo "      DOCKER_CONFIG=${CS_DOCKER_CONFIG} docker login" >&2
         exit 1
     fi
-    if grep -qE '"(credsStore|credHelpers)"' "${CS_DOCKER_CONFIG}"; then
-        echo "warning: ${CS_DOCKER_CONFIG} delegates to a credential helper that is not in the container; logins stored there will not work" >&2
+    if grep -qE '"(credsStore|credHelpers)"' "${CS_DOCKER_CONFIG}/config.json"; then
+        echo "warning: ${CS_DOCKER_CONFIG}/config.json delegates to a credential helper that is not in the container; logins stored there will not work" >&2
     fi
-    DOCKER_LOGIN_ARGS=(-v "${CS_DOCKER_CONFIG}:/home/claude/.docker/config.json:ro")
+    DOCKER_LOGIN_ARGS=(-v "${CS_DOCKER_CONFIG}/config.json:/home/claude/.docker/config.json:ro")
 fi
 
 case "${CS_DOCKER_FLAGS}" in
