@@ -181,6 +181,19 @@ check "restart builds, stops, then starts" test "$(tr '\n' '|' < "${RS}/log")" =
 : > "${RS}/log"; restart --resume
 check "explicit arguments replace the old ones" contains "${RS}/log" 'start --resume'
 
+# --- start.sh: restart policy ---------------------------------------------------
+SS="${WORK}/start"
+mkdir -p "${SS}/.claude/sandbox" "${SS}/bin"
+cp "${SB}/start.sh" "${SS}/.claude/sandbox/start.sh"
+printf '#!/bin/sh\necho "echo \\"\\$CS_DOCKER_FLAGS\\" > %s/flags"\n' "${SS}" > "${SS}/bin/curl"
+printf '#!/bin/sh\nexit 1\n' > "${SS}/bin/docker"
+chmod +x "${SS}/bin/curl" "${SS}/bin/docker"
+start() { OUT=$(env -i PATH="${SS}/bin:${BIN}" "$@" bash "${SS}/.claude/sandbox/start.sh" 2>&1); }
+start
+check "start.sh runs the container detached with --restart=unless-stopped" contains "${SS}/flags" '-d -t --restart=unless-stopped'
+start CS_DOCKER_FLAGS="--restart=no"
+check "a --restart in CS_DOCKER_FLAGS comes after it, so it wins" contains "${SS}/flags" '--restart=unless-stopped --restart=no'
+
 # --- prerequisites ----------------------------------------------------------
 new_project
 rm -f "${BIN}/envsubst"

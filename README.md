@@ -32,7 +32,7 @@ docker attach cs-<repo-name>   # detach again with ctrl-p ctrl-q
 docker stop cs-<repo-name>
 ```
 
-If the container is already running, `start.sh` says so and leaves it. Each start removes a stopped container of that name and creates a new one, so changed variables and flags always apply. Neither script passes `--rm`, so `CS_DOCKER_FLAGS` may include `--restart`; a restarted container keeps the settings it was created with, so `docker stop` it before changing them. Override either name with `CS_CONTAINER_NAME`; `claude-sandbox.sh` on its own appends a random suffix.
+If the container is already running, `start.sh` says so and leaves it. Each start removes a stopped container of that name and creates a new one, so changed variables and flags always apply. `start.sh` passes `--restart=unless-stopped`, so docker brings the container back after a daemon or host restart until you `docker stop` it; add your own `--restart` to `CS_DOCKER_FLAGS` to change that. Neither script passes `--rm`, so `CS_DOCKER_FLAGS` may include `--restart`; a restarted container keeps the settings it was created with, so `docker stop` it before changing them. Override either name with `CS_CONTAINER_NAME`; `claude-sandbox.sh` on its own appends a random suffix.
 
 ### Passing arguments to Claude
 
