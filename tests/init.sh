@@ -34,7 +34,7 @@ check() { local name=$1; shift; if "$@"; then pass "${name}"; else fail "${name}
 mentions() { grep -qF -- "$1" <<<"${OUT}"; }
 lacks() { ! mentions "$1"; }
 
-STUBS="build.sh run.sh start.sh sync.sh plugin.sh"
+STUBS="build.sh run.sh start.sh restart.sh sync.sh plugin.sh"
 SB="${WORK}/proj/.claude/sandbox"
 
 new_project() {
@@ -66,7 +66,7 @@ new_project
 run_init "${NO3}"; rc=$?
 check "a fresh project runs to the end" test "${rc}" -eq 0
 for s in ${STUBS}; do check "creates ${s}" has_file "${SB}/${s}"; done
-for s in build.sh run.sh start.sh sync.sh; do check "${s} is executable" mode_is "${SB}/${s}" 755; done
+for s in build.sh run.sh start.sh restart.sh sync.sh; do check "${s} is executable" mode_is "${SB}/${s}" 755; done
 check "plugin.sh is not executable" mode_is "${SB}/plugin.sh" 644
 check "stubs use the repo name as the image tag" contains "${SB}/build.sh" 'demo-app'
 check "records the stub hashes" has_file "${SB}/.init-hashes"
@@ -149,6 +149,22 @@ edited_project
 find "${SB}/.init-base" -mindepth 1 -delete
 run_init "n\n${NO3}" "${WORK}/init-changed.sh"
 check "m is not offered without the previous template" lacks "m/D"
+
+# --- restart.sh: build, stop, start with the old arguments ------------------
+new_project
+run_init "${NO3}"
+RS="${WORK}/restart"
+mkdir -p "${RS}/.claude/sandbox" "${RS}/bin"
+cp "${SB}/restart.sh" "${RS}/.claude/sandbox/restart.sh"
+printf '#!/bin/sh\necho "build" >> "%s/log"\n' "${RS}" > "${RS}/.claude/sandbox/build.sh"
+printf '#!/bin/sh\necho "start $*" >> "%s/log"\n' "${RS}" > "${RS}/.claude/sandbox/start.sh"
+printf '#!/bin/sh\ncase "$1" in\n  inspect) printf "%%s\\n" --continue "two words" ;;\n  stop) echo "stop $2" >> "%s/log" ;;\nesac\n' "${RS}" > "${RS}/bin/docker"
+chmod +x "${RS}"/.claude/sandbox/*.sh "${RS}/bin/docker"
+restart() { OUT=$(env -i PATH="${RS}/bin:${BIN}" bash "${RS}/.claude/sandbox/restart.sh" "$@" 2>&1); }
+: > "${RS}/log"; restart
+check "restart builds, stops, then starts" test "$(tr '\n' '|' < "${RS}/log")" = "build|stop cs-demo-app|start --continue two words|"
+: > "${RS}/log"; restart --resume
+check "explicit arguments replace the old ones" contains "${RS}/log" 'start --resume'
 
 # --- prerequisites ----------------------------------------------------------
 new_project
