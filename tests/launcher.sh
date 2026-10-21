@@ -151,18 +151,14 @@ check "  ...the repo" has "ARG:CS_USER_CONFIG_REPO"
 check "  ...the token (by name, never its value)" has "ARG:CS_USER_CONFIG_TOKEN"
 check "  ...without mounting anything at the user config path" lacks ":/home/claude/.claude-user"
 
-# --- --add-host reaches the container's /etc/hosts -----------------------------
-HOSTS_FILE="${WORK}/home/.claude-sandbox-hosts"
+# --- --add-host ---------------------------------------------------------------
 reset_project
-run_launcher CS_DOCKER_FLAGS="--add-host=db.local:10.1.2.3 --add-host other:10.9.9.9"
-check "--add-host=NAME:IP is written to the hosts file" grep -qx '10.1.2.3 db.local' "${HOSTS_FILE}"
-check "--add-host NAME:IP is written to the hosts file" grep -qx '10.9.9.9 other' "${HOSTS_FILE}"
-run_launcher CS_DOCKER_FLAGS="--add-host=db.local:10.1.2.3"
-check "entries do not accumulate across launches" test "$(grep -c 'db.local' "${HOSTS_FILE}")" -eq 1
-check "...and earlier ones are gone" absent grep -q other "${HOSTS_FILE}"
-run_launcher CS_DOCKER_FLAGS="--add-host=host.docker.internal:host-gateway"
-check "host-gateway warns" mentions "host-gateway"
-check "...and is not written" absent grep -q host.docker.internal "${HOSTS_FILE}"
+run_launcher CS_DOCKER_FLAGS="--add-host=db.local:10.1.2.3 --add-host=gw:host-gateway"
+check "--add-host values are passed to docker" has "ARG:--add-host=db.local:10.1.2.3"
+check "...including host-gateway" has "ARG:--add-host=gw:host-gateway"
+check "nothing is mounted over /etc/hosts" lacks "ARG:${WORK}/home/.claude-sandbox-hosts:/etc/hosts:ro"
+run_launcher
+check "...and no hosts file is written" test ! -e "${WORK}/home/.claude-sandbox-hosts"
 
 # --- container name ---------------------------------------------------------
 run_launcher CS_CONTAINER_NAME=my-box

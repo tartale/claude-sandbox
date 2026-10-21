@@ -16,6 +16,11 @@ if [ -n "$existing_user" ] && [ "$existing_user" != "claude" ]; then
 fi
 usermod -u "${CUID}" claude
 
+# docker's /etc/hosts (container name, --add-host entries) stays as written, minus
+# IPv6 localhost. Rewritten in place: docker bind-mounts it.
+hosts=$(grep -v '::1' /etc/hosts || true)
+printf '%s\n' "$hosts" > /etc/hosts
+
 if [ -n "$PLUGINS" ]; then
     install-plugins.sh "$PLUGINS"
 fi
