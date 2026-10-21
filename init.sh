@@ -463,7 +463,7 @@ add_setting() {   # NAME VALUE ACTIVE(1|0) COMMENT
 add_setting CS_IMAGE_REPO ghcr.io/tartale/claude-sandbox 1 "Image repository, including registry host and namespace."
 add_setting CS_IMAGE_TAG "$IMAGE_TAG" 1 "Tag of this project's sandbox image."
 add_setting CS_ENV_FILE "$ENV_FILE" 1 "Env file passed into the container."
-add_setting CS_DOCKER_LOGIN false 1 "true mounts your docker registry logins (read-only) into the container."
+add_setting CS_DOCKER_CONFIG "$DOCKER_DIR" 0 "Docker config directory whose config.json (registry logins) is mounted read-only into the container."
 add_setting CS_DOCKER_FLAGS "" 0 "Extra docker run flags, e.g. \"-v /host/path:/container/path\"."
 add_setting CS_PIDS_LIMIT "" 0 "Maximum number of processes in the container."
 add_setting CS_MEMORY "" 0 "Container memory limit, e.g. 8g."
@@ -558,8 +558,8 @@ if [ "$DO_REGISTRY" = 1 ]; then
       printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$(printf '%s:%s' "$GHUSER" "$CT" | base64 | tr -d '\n')" > "$DOCKER_DIR/config.json" )
     unset CT H
     ok "stored in $DOCKER_DIR"
-    note "launch with the login (set these in your shell, not $ENV_FILE):"
-    cmd "DOCKER_CONFIG=$DOCKER_DIR CS_DOCKER_LOGIN=true .claude/sandbox/run.sh"
+    note "share it with the container: uncomment CS_DOCKER_CONFIG in .envrc, or launch with (set in your shell, not $ENV_FILE):"
+    cmd "CS_DOCKER_CONFIG=$DOCKER_DIR .claude/sandbox/run.sh"
     note "after the first push: package settings -> Manage Actions access -> add $REPO (Write)"
     note "to link the package to the repo, add this to the Dockerfile:"
     cmd "LABEL org.opencontainers.image.source=\"https://github.com/$REPO\""
