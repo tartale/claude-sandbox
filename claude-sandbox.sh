@@ -136,6 +136,21 @@ fi
 
 CS_HOSTS="${HOME}/.claude-sandbox-hosts"
 grep -v '::1' /etc/hosts > "${CS_HOSTS}" || true   # host's real entries, minus IPv6
+# This file replaces the /etc/hosts docker generates, which is where --add-host entries
+# would land, so the ones in CS_DOCKER_FLAGS are written into it.
+for i in "${!CS_DOCKER_FLAGS[@]}"; do
+    case "${CS_DOCKER_FLAGS[i]}" in
+        --add-host=*) entry="${CS_DOCKER_FLAGS[i]#--add-host=}" ;;
+        --add-host) entry="${CS_DOCKER_FLAGS[i+1]:-}" ;;
+        *) continue ;;
+    esac
+    addr="${entry#*:}"; addr="${addr#[}"; addr="${addr%]}"
+    if [ "${addr}" = host-gateway ]; then
+        echo "warning: --add-host ${entry} is not supported (the container's /etc/hosts is the host's own file); give the address instead" >&2
+    else
+        printf '%s %s\n' "${addr}" "${entry%%:*}" >> "${CS_HOSTS}"
+    fi
+done
 chmod 644 "${CS_HOSTS}"
 
 
