@@ -44,7 +44,7 @@ Both scripts forward their arguments to `claude`:
 
 For `start.sh` the arguments apply to the container it starts; a container that is already running is left as it is.
 
-`restart.sh` runs `build.sh`, stops the container and runs `start.sh`. Without arguments it reuses the `claude` arguments of the container it replaces; arguments you pass replace them. Environment variables such as `CS_USER_CONFIG_TOKEN` are read fresh from your shell, so this is how a running sandbox picks up a changed one.
+`restart.sh` runs `build.sh`, stops the container and runs `start.sh`. Without arguments it reuses the `claude` arguments of the container it replaces; arguments you pass replace them. Environment variables and `.env` are read fresh, so this is how a running sandbox picks up a changed `CS_USER_CONFIG_TOKEN`.
 
 ### Using a specific image tag
 
@@ -72,9 +72,10 @@ Run this from a project's root, on your host (not inside a sandbox), to set the 
 
 It:
 
-- creates `.claude/sandbox/` stubs (a stub you have not edited since `init.sh` last wrote it is updated to the current template; an edited one is asked about only when the template has changed since your last run, so a file you maintain such as `plugin.sh` does not prompt every time; Enter shows the diff first; `m` three-way merges your edits into the new template using the template kept in `.claude/sandbox/.init-base/`, leaving conflict markers where they overlap; a file that is replaced is first copied to `<name>.bak.<timestamp>`, which is git-excluded locally; `.claude/sandbox/.init-hashes` records what was last written and the template seen): `plugin.sh` is where the project's plugins and packages go; `build.sh` builds the project's image from it; `run.sh` starts the sandbox interactively; `start.sh` starts it in the background; `restart.sh` rebuilds the image and restarts that container; `sync.sh` applies the patch `claude-user-sync` writes (see [Read-only user scope](#read-only-user-scope)). They wrap the `build-image.sh` and `claude-sandbox.sh` one-liners, and use the repo name as the image tag.
+- creates `.claude/sandbox/` stubs (a stub you have not edited since `init.sh` last wrote it is updated to the current template; an edited one is asked about only when the template has changed since your last run, so a file you maintain such as `plugin.sh` does not prompt every time; Enter shows the diff first; `m` three-way merges your edits into the new template using the template kept in `.claude/sandbox/.init-base/`, leaving conflict markers where they overlap; a file that is replaced is first copied to `<name>.bak.<timestamp>`, which is git-excluded locally; `.claude/sandbox/.init-hashes` records what was last written and the template seen): `plugin.sh` is where the project's plugins and packages go; `build.sh` builds the project's image from it; `run.sh` starts the sandbox interactively; `start.sh` starts it in the background; `restart.sh` rebuilds the image and restarts that container; `sync.sh` applies the patch `claude-user-sync` writes (see [User scope](#user-scope)). They wrap the `build-image.sh` and `claude-sandbox.sh` one-liners, and use the repo name as the image tag.
 - checks that `envsubst` is installed (needed to read `.env`) and stops with the install command if it is missing, before asking anything; `plugin.sh` lists every built-in plugin, commented out.
-- adds the `CS_` launcher settings (`CS_IMAGE_REPO`, `CS_IMAGE_TAG`, `CS_ENV_FILE`, `CS_DOCKER_LOGIN`, and commented-out `CS_USER_CONFIG`, `CS_DOCKER_FLAGS`, `CS_PIDS_LIMIT`, `CS_MEMORY`) with their defaults to `.envrc` in the project root; names already there are left alone.
+- adds the `CS_` launcher settings (`CS_IMAGE_REPO`, `CS_IMAGE_TAG`, `CS_ENV_FILE`, `CS_DOCKER_LOGIN`, and commented-out `CS_DOCKER_FLAGS`, `CS_PIDS_LIMIT`, `CS_MEMORY`) with their defaults to `.envrc` in the project root; names already there are left alone.
+- adds `CS_USER_CONFIG_REPO` (pre-filled as `<project owner>/claude-user`) and `CS_USER_CONFIG_TOKEN` to `.env`, commented out and with a comment each; names already there are left alone (see [User scope](#user-scope));
 - opens GitHub's token page with a single-repo fine-grained token pre-filled (Contents, Pull requests and Issues read/write), validates the token you paste (no Administration, can push, no other private repos), and writes `CS_GITHUB_TOKEN` to `.env` at mode 600, excluded from git locally.
 
 All questions (token, registry login, ruleset) are asked up front, before anything is written. The optional ones are:
@@ -296,14 +297,17 @@ Nothing else under `.claude/` should be ignored — that's the point.
 
 ### User scope
 
-User-scope rules and memories live in a small private git repo that you clone on each machine. Point `CS_USER_CONFIG` at the checkout:
+User-scope rules and memories live in a small private git repo (for example `you/claude-user`) that every sandbox clones read-only at start. Give the sandbox the repo and a token that can only read it; `init.sh` adds both to `.env`, commented out, with the repo pre-filled as `<project owner>/claude-user`:
 
 ```bash
-git clone git@github.com:you/claude-user.git ~/.claude-user
-export CS_USER_CONFIG="$HOME/.claude-user"
+# .env
+CS_USER_CONFIG_REPO=you/claude-user
+CS_USER_CONFIG_TOKEN=github_pat_...   # fine-grained, only that repo, Contents: Read-only
 ```
 
-The repo is bind-mounted at `/home/claude/.claude-user` and scaffolded on first use:
+Both are optional: without them the session has no user scope and says so. Set the two together; a repo without a token is skipped with a warning. They can equally be exported in your shell instead of `.env`. The sandbox can read `.env`, so the token is readable inside it; it can only read that repo.
+
+The repo is cloned to `/home/claude/.claude-user` and scaffolded on first use:
 
 ```
 CLAUDE.md          your rules, loaded into every session on every project
@@ -311,27 +315,9 @@ memory/MEMORY.md   index of your user-scope memories
 memory/*.md        the memories themselves
 ```
 
-At container start the sandbox pulls the repo, then generates `~/.claude/CLAUDE.md` from it — the scope routing rules, your `CLAUDE.md`, and your memory index, inlined so Claude always has them. That file is regenerated on every start; edit `~/.claude-user/CLAUDE.md` instead.
+At container start the sandbox generates `~/.claude/CLAUDE.md` from it: the scope routing rules, your `CLAUDE.md`, and your memory index, inlined so Claude always has them. That file is regenerated on every start; edit the repo's `CLAUDE.md` instead.
 
-Because it's a git repo, pushing is what makes a memory reach your other machines. From inside the container:
-
-```bash
-claude-user-sync                      # commit everything and push
-claude-user-sync "Prefer pnpm"        # with a message
-```
-
-Then `git pull` in the checkout on your other machine, or just start a sandbox there — the pull happens automatically.
-
-#### Read-only user scope
-
-A mounted checkout is writable, and the container pushes with the sandbox's GitHub token, so a compromised session could rewrite the rules every future session starts from. To close that off, don't mount the repo. Give the sandbox a second token that can only read it:
-
-```bash
-export CS_USER_CONFIG_REPO=you/claude-user
-export CS_USER_CONFIG_TOKEN=github_pat_...   # fine-grained, only that repo, Contents: Read-only
-```
-
-At start the entrypoint clones the repo into the container with the token. The token stays in the environment, but it can only read, so the session can fetch later changes and can never push them. The clone vanishes with the container. `claude-user-sync` commits locally and writes `.tmp/claude-user.patch` in the project; review it and apply it from your own checkout with the stub `init.sh` generated:
+The token stays in the environment, but it can only read, so the session can fetch later changes and can never push them. The clone vanishes with the container. `claude-user-sync` commits locally and writes `.tmp/claude-user.patch` in the project; review it and apply it from your own checkout with the stub `init.sh` generated:
 
 ```bash
 .claude/sandbox/sync.sh
@@ -382,9 +368,8 @@ If you previously hand-symlinked the memory directory into a project, drop the s
 | `CS_ENV_FILE` | Path to an env file to pass into the container (default: `.env`) |
 | `LANGUAGE_VERSIONS` | Space-separated list of language versions in `<language>-<version>` format (e.g. `"go-1.25.10"`). Each plugin extracts its own entry; omitted plugins default to latest stable. |
 | `PLUGINS` | Path to a plugin script or directory of plugin scripts to install |
-| `CS_USER_CONFIG` | Path to a checkout of your user config repo (user-scope rules and memories). Unset disables the user scope. Read-write; see below for a read-only alternative. |
-| `CS_USER_CONFIG_REPO` | `owner/name` of your user config repo, cloned read-only into the container at start. Requires `CS_USER_CONFIG_TOKEN`; mutually exclusive with `CS_USER_CONFIG`. See [Read-only user scope](#read-only-user-scope). |
-| `CS_USER_CONFIG_TOKEN` | Fine-grained token with read-only Contents access to that one repo. Stays in the environment so `claude-user-pull` can fetch later changes; it cannot push. |
+| `CS_USER_CONFIG_REPO` | `owner/name` of your user config repo, cloned read-only into the container at start. Requires `CS_USER_CONFIG_TOKEN`. May be set in `.env`. See [User scope](#user-scope). |
+| `CS_USER_CONFIG_TOKEN` | Fine-grained token with read-only Contents access to that one repo. May be set in `.env`. Stays in the environment so `claude-user-pull` can fetch later changes; it cannot push. |
 | `CS_USER_CONFIG_CHECKOUT` | Your own checkout of the user config repo on the host, where `sync.sh` applies the sandbox's patch (default `~/.claude-user`). Not read by the launcher. |
 | `CS_DOCKER_LOGIN` | Set to `true` to mount the host's `~/.docker/config.json` (or `$DOCKER_CONFIG/config.json`) read-only so the container's docker CLI can use your registry logins. Off by default; the credentials are readable by anything in the container. Logins held in a credential helper (`credsStore`, e.g. macOS Keychain) are not available in the container. |
 | `CS_PIDS_LIMIT` | Maximum number of processes in the container (`docker run --pids-limit`). Unset means no limit. |

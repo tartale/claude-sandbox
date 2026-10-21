@@ -23,7 +23,9 @@ fi
 # User-scope config: cloned with a token that can only read that repo. The token
 # stays in the environment so claude-user-pull can fetch later changes; it can read
 # the rules but never push them, and claude-user-sync hands changes back as a patch.
-if [ -n "$CS_USER_CONFIG_REPO" ]; then
+if [ -n "$CS_USER_CONFIG_REPO" ] && [ -z "$CS_USER_CONFIG_TOKEN" ]; then
+    echo "warning: CS_USER_CONFIG_REPO is set without CS_USER_CONFIG_TOKEN; the user scope is disabled" >&2
+elif [ -n "$CS_USER_CONFIG_REPO" ]; then
     user_config=/home/claude/.claude-user
     if GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraheader \
         GIT_CONFIG_VALUE_0="Authorization: Basic $(printf 'x-access-token:%s' "$CS_USER_CONFIG_TOKEN" | base64 -w0)" \

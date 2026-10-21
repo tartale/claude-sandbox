@@ -13,6 +13,7 @@ init.sh   (takes no options; it asks as it goes)
   - creates .claude/sandbox/{build,run,start}.sh and plugin.sh stubs (existing files are kept)
   - walks you through a single-repo fine-grained token, validates it, and writes
     CS_GITHUB_TOKEN to .env (mode 600, git-excluded); CS_ENV_FILE overrides the file
+  - adds CS_USER_CONFIG_REPO (pre-filled) and CS_USER_CONFIG_TOKEN to .env, commented out
   - optionally stores a package-only ghcr.io login in ~/.docker-sandbox
   - optionally creates a "main" branch ruleset (needs gh)
 EOF2
@@ -463,7 +464,6 @@ add_setting CS_IMAGE_REPO ghcr.io/tartale/claude-sandbox 1 "Image repository, in
 add_setting CS_IMAGE_TAG "$IMAGE_TAG" 1 "Tag of this project's sandbox image."
 add_setting CS_ENV_FILE "$ENV_FILE" 1 "Env file passed into the container."
 add_setting CS_DOCKER_LOGIN false 1 "true mounts your docker registry logins (read-only) into the container."
-add_setting CS_USER_CONFIG "" 0 "Path to your user-config checkout (user-scope rules and memories)."
 add_setting CS_DOCKER_FLAGS "" 0 "Extra docker run flags, e.g. \"-v /host/path:/container/path\"."
 add_setting CS_PIDS_LIMIT "" 0 "Maximum number of processes in the container."
 add_setting CS_MEMORY "" 0 "Container memory limit, e.g. 8g."
@@ -511,6 +511,31 @@ if [ "$DO_TOKEN" = 1 ]; then
     else
         note "no token entered; nothing written"
     fi
+fi
+
+# --- user-scope settings in the env file ------------------------------------
+# The sandbox clones your user-scope rules and memories read-only from
+# CS_USER_CONFIG_REPO with CS_USER_CONFIG_TOKEN. Both are optional (without them the
+# session simply has no user scope), so they go in commented out; the repo is
+# pre-filled with the usual name next to this project's owner.
+say "User-scope settings in $ENV_FILE"
+add_env_setting() {   # NAME VALUE COMMENT
+    if [ -f "$ENV_FILE" ] && grep -qE "^[[:space:]]*#?[[:space:]]*$1=" "$ENV_FILE"; then
+        note "kept    $1"
+        return
+    fi
+    ( umask 077
+      touch "$ENV_FILE"
+      [ -s "$ENV_FILE" ] && echo >> "$ENV_FILE"
+      printf '# %s\n# %s=%s\n' "$3" "$1" "$2" >> "$ENV_FILE" )
+    ok "added   $1"
+}
+add_env_setting CS_USER_CONFIG_REPO "${REPO%%/*}/claude-user" "Private repo (owner/name) with your user-scope rules and memories, cloned read-only into the sandbox."
+add_env_setting CS_USER_CONFIG_TOKEN "" "Fine-grained token with Contents: Read-only on that one repo. Needed with CS_USER_CONFIG_REPO."
+chmod 600 "$ENV_FILE"
+if git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q "$ENV_FILE"; then
+    echo "$ENV_FILE" >> "$(git rev-parse --git-dir)/info/exclude"
+    note "added $ENV_FILE to .git/info/exclude"
 fi
 
 # --- GHCR login in a dedicated docker config ---------------------------------

@@ -93,26 +93,15 @@ mkdir -p "${CS_PROJECT_STATE}"
 CS_PROJECT_MEMORY="$(pwd)/.claude/memory"
 mkdir -p "${CS_PROJECT_MEMORY}"
 
-# User-scope rules and memories: a private git repo, cloned on each machine.
-USER_CONFIG_ARGS=()
-if [ -n "${CS_USER_CONFIG_REPO}" ] || [ -n "${CS_USER_CONFIG_TOKEN}" ]; then
-    if [ -z "${CS_USER_CONFIG_REPO}" ] || [ -z "${CS_USER_CONFIG_TOKEN}" ]; then
-        echo "CS_USER_CONFIG_REPO and CS_USER_CONFIG_TOKEN must be set together" >&2
-        exit 1
-    fi
-    if [ -n "${CS_USER_CONFIG}" ]; then
-        echo "set either CS_USER_CONFIG (mount a checkout) or CS_USER_CONFIG_REPO (clone read-only), not both" >&2
-        exit 1
-    fi
-    USER_CONFIG_ARGS=(-e CS_USER_CONFIG_REPO -e CS_USER_CONFIG_TOKEN)
-elif [ -n "${CS_USER_CONFIG}" ]; then
-    if [ ! -d "${CS_USER_CONFIG}" ]; then
-        echo "CS_USER_CONFIG=${CS_USER_CONFIG} does not exist. Clone your user config repo there:" >&2
-        echo "      git clone git@github.com:<you>/<repo>.git ${CS_USER_CONFIG}" >&2
-        exit 1
-    fi
-    USER_CONFIG_ARGS=(-v "${CS_USER_CONFIG}:/home/claude/.claude-user")
+# User-scope rules and memories: a private git repo, cloned read-only by the
+# entrypoint from CS_USER_CONFIG_REPO and CS_USER_CONFIG_TOKEN. They may come from
+# the shell (passed by name here) or from the env file (which reaches the container
+# on its own).
+if [ -n "${CS_USER_CONFIG}" ]; then
+    echo "CS_USER_CONFIG is not supported; set CS_USER_CONFIG_REPO and CS_USER_CONFIG_TOKEN instead" >&2
+    exit 1
 fi
+USER_CONFIG_ARGS=(-e CS_USER_CONFIG_REPO -e CS_USER_CONFIG_TOKEN)
 
 # Opt-in: share the host's docker registry logins (read-only) so the container's
 # docker CLI can pull and push private images. Anything in the container can read

@@ -135,12 +135,10 @@ check "missing envsubst prints install help" mentions "brew install gettext"
 
 # --- user config and docker login -------------------------------------------
 reset_project
-run_launcher CS_USER_CONFIG="${WORK}/nope"; rc=$?
-check "missing CS_USER_CONFIG directory is an error" test "${rc}" -ne 0
-
 mkdir -p "${WORK}/uc"
-run_launcher CS_USER_CONFIG="${WORK}/uc"
-check "CS_USER_CONFIG is bind-mounted" has "ARG:${WORK}/uc:/home/claude/.claude-user"
+run_launcher CS_USER_CONFIG="${WORK}/uc"; rc=$?
+check "CS_USER_CONFIG is rejected" test "${rc}" -ne 0
+check "...with the variables to use instead" mentions "CS_USER_CONFIG_REPO"
 
 run_launcher CS_DOCKER_LOGIN=true; rc=$?
 check "CS_DOCKER_LOGIN without a config file is an error" test "${rc}" -ne 0
@@ -150,10 +148,6 @@ echo '{"auths":{}}' > "${WORK}/home/.docker/config.json"
 run_launcher CS_DOCKER_LOGIN=true
 check "CS_DOCKER_LOGIN mounts the config read-only" has "ARG:${WORK}/home/.docker/config.json:/home/claude/.docker/config.json:ro"
 
-run_launcher CS_USER_CONFIG_REPO=a/b; rc=$?
-check "CS_USER_CONFIG_REPO without a token is an error" test "${rc}" -ne 0
-run_launcher CS_USER_CONFIG_REPO=a/b CS_USER_CONFIG_TOKEN=t CS_USER_CONFIG="${WORK}/uc"; rc=$?
-check "read-only and mounted user config together is an error" test "${rc}" -ne 0
 run_launcher CS_USER_CONFIG_REPO=a/b CS_USER_CONFIG_TOKEN=t; rc=$?
 check "repo plus token passes both names through" test "${rc}" -eq 0
 check "  ...the repo" has "ARG:CS_USER_CONFIG_REPO"
