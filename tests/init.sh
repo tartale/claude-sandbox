@@ -150,6 +150,21 @@ find "${SB}/.init-base" -mindepth 1 -delete
 run_init "n\n${NO3}" "${WORK}/init-changed.sh"
 check "m is not offered without the previous template" lacks "m/D"
 
+# --- user-scope settings in .env ----------------------------------------------
+new_project
+run_init "${NO3}"
+ENVF="${WORK}/proj/.env"
+check "adds the user-config repo, commented out, pre-filled from the owner" contains "${ENVF}" '# CS_USER_CONFIG_REPO=o/claude-user'
+check "adds the user-config token, commented out and empty" contains "${ENVF}" '# CS_USER_CONFIG_TOKEN='
+check "puts a comment above each" test "$(grep -c '^# [A-Z].*\.$' "${ENVF}")" -eq 2
+check ".env is mode 600" mode_is "${ENVF}" 600
+check ".env is git-excluded" contains "${WORK}/proj/.git/info/exclude" '.env'
+printf 'CS_USER_CONFIG_REPO=me/mine\n' > "${ENVF}"
+run_init "${NO3}"
+check "an existing repo setting is kept" contains "${ENVF}" 'CS_USER_CONFIG_REPO=me/mine'
+check "...and not repeated" test "$(grep -cE '^#? ?CS_USER_CONFIG_REPO=' "${ENVF}")" -eq 1
+check "...while the missing token is added" contains "${ENVF}" '# CS_USER_CONFIG_TOKEN='
+
 # --- restart.sh: build, stop, start with the old arguments ------------------
 new_project
 run_init "${NO3}"

@@ -3,8 +3,7 @@
 #
 #   project scope -> /workspace/.claude/        committed with the project, so
 #                                               it travels via git pull
-#   user scope    -> /home/claude/.claude-user  a private repo, bind-mounted
-#                                               from the host or cloned read-only,
+#   user scope    -> /home/claude/.claude-user  a private repo, cloned read-only,
 #                                               so it follows the user between
 #                                               machines
 #
@@ -21,13 +20,6 @@ GLOBAL_CLAUDE_MD="${HOME}/.claude/CLAUDE.md"
 mkdir -p "${PROJECT_CONFIG}/memory"
 
 if [ -d "${USER_CONFIG}" ]; then
-    # Pick up whatever was committed from another machine. Best-effort: no
-    # remote, no network or a dirty tree must not stop the session.
-    if [ -d "${USER_CONFIG}/.git" ] && [ -n "$(git -C "${USER_CONFIG}" remote)" ]; then
-        git -C "${USER_CONFIG}" pull --ff-only --quiet 2>/dev/null \
-            || echo "warning: could not pull ${USER_CONFIG}; using the local copy" >&2
-    fi
-
     mkdir -p "${USER_CONFIG}/memory"
 
     if [ ! -f "${USER_CONFIG}/CLAUDE.md" ]; then
@@ -112,9 +104,8 @@ HEADER
             cat "${USER_CONFIG}/memory/MEMORY.md"
         fi
     else
-        printf '\n---\n\n**No user scope is mounted.** '
-        printf 'Set `CS_USER_CONFIG` to a checkout of the user config repo, or '
-        printf '`CS_USER_CONFIG_REPO` and `CS_USER_CONFIG_TOKEN`, to '
+        printf '\n---\n\n**No user scope is cloned.** '
+        printf 'Set `CS_USER_CONFIG_REPO` and `CS_USER_CONFIG_TOKEN` to '
         printf 'enable it; until then, keep user-scope facts out of the '
         printf 'project memory directory.\n'
     fi
