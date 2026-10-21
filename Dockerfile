@@ -44,9 +44,11 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY setup-scopes.sh /usr/local/bin/setup-scopes.sh
 COPY user-sync.sh /usr/local/bin/claude-user-sync
 COPY user-pull.sh /usr/local/bin/claude-user-pull
+COPY merge-hosts.sh /usr/local/bin/merge-hosts.sh
 COPY claude-settings.json /usr/local/share/claude-sandbox/settings.json
 RUN chmod +x /usr/local/bin/install-plugins.sh /usr/local/bin/entrypoint.sh \
-             /usr/local/bin/setup-scopes.sh /usr/local/bin/claude-user-sync /usr/local/bin/claude-user-pull
+             /usr/local/bin/setup-scopes.sh /usr/local/bin/claude-user-sync /usr/local/bin/claude-user-pull \
+             /usr/local/bin/merge-hosts.sh
 
 ARG LANGUAGE_VERSIONS=""
 ARG PLUGINS=""

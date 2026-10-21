@@ -16,6 +16,11 @@ if [ -n "$existing_user" ] && [ "$existing_user" != "claude" ]; then
 fi
 usermod -u "${CUID}" claude
 
+# The host's hosts entries are mounted aside; add them to the ones docker wrote.
+if [ -f /run/claude-sandbox-hosts ]; then
+    merge-hosts.sh /run/claude-sandbox-hosts || echo "warning: could not merge the host's /etc/hosts entries" >&2
+fi
+
 if [ -n "$PLUGINS" ]; then
     install-plugins.sh "$PLUGINS"
 fi

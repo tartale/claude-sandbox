@@ -355,7 +355,7 @@ If you previously hand-symlinked the memory directory into a project, drop the s
 
 ## Tests
 
-`make test` runs the bash tests in `tests/`. `launcher.sh` exercises the launcher with a stubbed `docker` (no daemon needed); `init.sh` runs `init.sh` in a scratch git project on a pty, with no network, to check the stubs it generates and how it treats files you edited. The expansion tests need `envsubst` and are skipped without it. CI runs them on every pull request.
+`make test` runs the bash tests in `tests/`. `launcher.sh` exercises the launcher with a stubbed `docker` (no daemon needed); `init.sh` runs `init.sh` in a scratch git project on a pty, with no network, to check the stubs it generates and how it treats files you edited. `merge-hosts.sh` and `user-pull.sh` test the container-side scripts of those names against scratch files and local repos. The expansion tests need `envsubst` and are skipped without it. CI runs them on every pull request.
 
 ## Environment variables
 
@@ -363,7 +363,7 @@ If you previously hand-symlinked the memory directory into a project, drop the s
 |---|---|
 | `CS_IMAGE_REPO` | Image repository, including registry host and namespace (default: `ghcr.io/tartale/claude-sandbox`). Set the same value for `build-image.sh` and the launcher. |
 | `CS_IMAGE_TAG` | Tag of the image to use (default: `local`) |
-| `CS_DOCKER_FLAGS` | Extra arguments for `docker run`, as one string (e.g. `"-v /var/run/docker.sock:/var/run/docker.sock"`). `--add-host NAME:IP` entries are written into the container's `/etc/hosts`, which is a copy of the host's; `host-gateway` is not supported. |
+| `CS_DOCKER_FLAGS` | Extra arguments for `docker run`, as one string (e.g. `"-v /var/run/docker.sock:/var/run/docker.sock"`). `--add-host` (including `host-gateway`) works; the host's own `/etc/hosts` entries, minus IPv6 localhost, are added to the container's at start, after the ones docker wrote. |
 | `CS_CONTAINER_NAME` | Container name (default: `claude-sandbox-<dir>-<random>`; `start.sh` sets `cs-<repo-name>`) |
 | `CS_ENV_FILE` | Path to an env file to pass into the container (default: `.env`) |
 | `LANGUAGE_VERSIONS` | Space-separated list of language versions in `<language>-<version>` format (e.g. `"go-1.25.10"`). Each plugin extracts its own entry; omitted plugins default to latest stable. |
