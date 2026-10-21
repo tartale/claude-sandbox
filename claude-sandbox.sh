@@ -97,10 +97,6 @@ mkdir -p "${CS_PROJECT_MEMORY}"
 # entrypoint from CS_USER_CONFIG_REPO and CS_USER_CONFIG_TOKEN. They may come from
 # the shell (passed by name here) or from the env file (which reaches the container
 # on its own).
-if [ -n "${CS_USER_CONFIG}" ]; then
-    echo "CS_USER_CONFIG is not supported; set CS_USER_CONFIG_REPO and CS_USER_CONFIG_TOKEN instead" >&2
-    exit 1
-fi
 USER_CONFIG_ARGS=(-e CS_USER_CONFIG_REPO -e CS_USER_CONFIG_TOKEN)
 
 # Opt-in: share the host's docker registry logins (read-only) so the container's

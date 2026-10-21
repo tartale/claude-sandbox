@@ -135,10 +135,6 @@ check "missing envsubst prints install help" mentions "brew install gettext"
 
 # --- user config and docker login -------------------------------------------
 reset_project
-mkdir -p "${WORK}/uc"
-run_launcher CS_USER_CONFIG="${WORK}/uc"; rc=$?
-check "CS_USER_CONFIG is rejected" test "${rc}" -ne 0
-check "...with the variables to use instead" mentions "CS_USER_CONFIG_REPO"
 
 run_launcher CS_DOCKER_LOGIN=true; rc=$?
 check "CS_DOCKER_LOGIN without a config file is an error" test "${rc}" -ne 0
@@ -152,7 +148,7 @@ run_launcher CS_USER_CONFIG_REPO=a/b CS_USER_CONFIG_TOKEN=t; rc=$?
 check "repo plus token passes both names through" test "${rc}" -eq 0
 check "  ...the repo" has "ARG:CS_USER_CONFIG_REPO"
 check "  ...the token (by name, never its value)" has "ARG:CS_USER_CONFIG_TOKEN"
-check "  ...without mounting a checkout" lacks "ARG:${WORK}/uc:/home/claude/.claude-user"
+check "  ...without mounting anything at the user config path" lacks ":/home/claude/.claude-user"
 
 # --- container name ---------------------------------------------------------
 run_launcher CS_CONTAINER_NAME=my-box
