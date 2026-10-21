@@ -8,7 +8,7 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF2'
-init.sh   (takes no options; it asks as it goes)
+init.sh [--yes | --no]   (asks as it goes; --yes or --no answers the yes/no questions itself)
 
   - creates .claude/sandbox/{build,run,start}.sh and plugin.sh stubs (existing files are kept)
   - walks you through a single-repo fine-grained token, validates it, and writes
@@ -16,17 +16,27 @@ init.sh   (takes no options; it asks as it goes)
   - adds CS_USER_CONFIG_REPO (pre-filled) and CS_USER_CONFIG_TOKEN to .env, commented out
   - optionally stores a package-only ghcr.io login in ~/.docker-sandbox
   - optionally creates a "main" branch ruleset (needs gh)
+
+  --yes   answer yes: an edited stub is replaced (after a backup) and the ruleset is created
+          when that is possible; the token and registry login need a secret pasted in, so
+          they are skipped
+  --no    answer no to everything: edited stubs are kept, nothing is created on GitHub
 EOF2
 }
 
 ENV_FILE="${CS_ENV_FILE:-.env}"
 DOCKER_DIR="${CS_SANDBOX_DOCKER_CONFIG:-$HOME/.docker-sandbox}"
 
-case "${1:-}" in
-    "") ;;
-    -h|--help) usage; exit 0 ;;
-    *) echo "init.sh takes no options (see --help)" >&2; exit 2 ;;
-esac
+AUTO=""   # yes | no: answer the yes/no questions without asking
+for arg in "$@"; do
+    case "$arg" in
+        -h|--help) usage; exit 0 ;;
+        --yes|--no)
+            [ -z "$AUTO" ] || [ "$AUTO" = "${arg#--}" ] || { echo "init.sh: --yes and --no cannot be combined" >&2; exit 2; }
+            AUTO="${arg#--}" ;;
+        *) echo "init.sh: unknown option $arg (see --help)" >&2; exit 2 ;;
+    esac
+done
 
 # Colors only on a terminal, and never when NO_COLOR is set.
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -50,9 +60,15 @@ show_diff() {   # your-copy template
 cmd()  { printf '      %s%s%s\n' "${BOLD}" "$*" "${RESET}"; }   # a command or URL alone on its line, to copy
 note() { printf '  %s%s%s\n' "${DIM}" "$*" "${RESET}"; }
 die()  { printf '%serror:%s %s\n' "${RED}${BOLD}" "${RESET}" "$*" >&2; exit 1; }
-# ask_def PROMPT Y|N -- yes/no question; Enter picks the default, which the prompt shows.
+# ask_def PROMPT Y|N [YES_OK] -- yes/no question; Enter picks the default, which the prompt
+# shows. With --yes or --no it answers itself; YES_OK=0 marks a question --yes cannot say
+# yes to (the step needs something typed in).
 ask_def() {
     local a hint="[Y/n]"; [ "$2" = N ] && hint="[y/N]"
+    if [ -n "$AUTO" ]; then
+        if [ "$AUTO" = yes ] && [ "${3:-1}" != 0 ]; then echo "$1 $hint y (--yes)"; return 0; fi
+        echo "$1 $hint n (--$AUTO)"; return 1
+    fi
     read -r -p "$1 $hint " a
     if [ "$2" = N ]; then [[ "$a" =~ ^[Yy] ]]; else ! [[ "$a" =~ ^[Nn] ]]; fi
 }
@@ -124,6 +140,7 @@ fi
 
 REPO=$(git remote get-url origin 2>/dev/null | sed -E 's#^(git@github.com:|https://github.com/)##; s#\.git$##') || true
 if ! [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+    [ -z "$AUTO" ] || die "could not work out the GitHub repo from the origin remote; run init.sh without --$AUTO"
     read -r -p "  GitHub repo (OWNER/NAME): " REPO
     [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "expected OWNER/NAME"
 fi
@@ -350,6 +367,11 @@ for name in $STUB_NAMES; do
         continue
     fi
     [ "$(recorded_field "$name" 3)" = "$(file_hash "$STUB_DIR/$name")" ] && continue
+    if [ -n "$AUTO" ]; then
+        echo "  $dest differs from the template and looks edited. Replace it? (--$AUTO)"
+        [ "$AUTO" = yes ] && STUB_WRITE="$STUB_WRITE $name"
+        continue
+    fi
     shown=0; m=""; mq=""
     if can_merge "$name"; then m="/m"; mq=" or merge your edits into it"; fi
     while :; do
@@ -373,13 +395,13 @@ if [ -n "$EXISTING_TOKEN" ] && token_problem "$EXISTING_TOKEN" >/dev/null && [ "
     TOKEN_DEFAULT=N; TOKEN_NOTE=" (a valid token is already in $ENV_FILE)"
 fi
 unset EXISTING_TOKEN
-ask_def "  Create and store a GitHub token for $REPO?$TOKEN_NOTE" "$TOKEN_DEFAULT" && DO_TOKEN=1
+ask_def "  Create and store a GitHub token for $REPO?$TOKEN_NOTE" "$TOKEN_DEFAULT" 0 && DO_TOKEN=1
 
 REGISTRY_DEFAULT=Y; REGISTRY_NOTE=""
 if grep -qs '"ghcr.io"' "$DOCKER_DIR/config.json"; then
     REGISTRY_DEFAULT=N; REGISTRY_NOTE=" (already stored in $DOCKER_DIR)"
 fi
-ask_def "  Store a package-only ghcr.io login for pushing images?$REGISTRY_NOTE" "$REGISTRY_DEFAULT" && DO_REGISTRY=1
+ask_def "  Store a package-only ghcr.io login for pushing images?$REGISTRY_NOTE" "$REGISTRY_DEFAULT" 0 && DO_REGISTRY=1
 
 HAVE_GH=0; command -v gh >/dev/null && HAVE_GH=1
 RULESET_DEFAULT=Y; RULESET_NOTE=""
@@ -398,7 +420,8 @@ elif REPO_INFO=$(gh api "repos/$REPO" --jq '[.private, .permissions.admin] | @ts
 else
     RULESET_NOTE=" (could not read $REPO with gh; it may need 'gh auth login')"
 fi
-if ask_def "  Create a 'main' ruleset on $REPO?$RULESET_NOTE" "$RULESET_DEFAULT"; then
+RULESET_YES_OK=0; [ "$HAVE_GH" = 1 ] && [ "$RULESET_DEFAULT" = Y ] && RULESET_YES_OK=1
+if ask_def "  Create a 'main' ruleset on $REPO?$RULESET_NOTE" "$RULESET_DEFAULT" "$RULESET_YES_OK"; then
     [ "$HAVE_GH" = 1 ] || die "install gh (commands above), then rerun"
     gh auth status >/dev/null 2>&1 || die $'sign in to gh as a repo admin, then rerun:\n\n      gh auth login'
     DO_RULESET=1

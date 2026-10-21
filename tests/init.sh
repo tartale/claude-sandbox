@@ -181,7 +181,28 @@ check "restart builds, stops, then starts" test "$(tr '\n' '|' < "${RS}/log")" =
 : > "${RS}/log"; restart --resume
 check "explicit arguments replace the old ones" contains "${RS}/log" 'start --resume'
 
+# --- --yes and --no ----------------------------------------------------------
+edited_project
+run_init "" "${WORK}/init-changed.sh --yes"; rc=$?
+check "--yes finishes without being asked anything" test "${rc}" -eq 0
+check "--yes replaces an edited stub whose template changed" contains "${SB}/plugin.sh" '# new header line'
+check "...after a backup" test "$(backups plugin.sh)" -eq 1
+check "--yes skips the token, which needs a pasted secret" lacks "Paste the token"
+check "--yes does not touch the ruleset without gh" lacks "ruleset created"
+
+edited_project
+run_init "" "${WORK}/init-changed.sh --no"; rc=$?
+check "--no finishes without being asked anything" test "${rc}" -eq 0
+check "--no keeps an edited stub" contains "${SB}/plugin.sh" 'mypkg'
+check "...and makes no backup" test "$(backups plugin.sh)" -eq 0
+
+new_project
+OUT=$(bash "${ROOT}/init.sh" --yes --no 2>&1); rc=$?
+check "--yes with --no is an error" test "${rc}" -eq 2
+
 # --- start.sh: restart policy ---------------------------------------------------
+new_project
+run_init "${NO3}"
 SS="${WORK}/start"
 mkdir -p "${SS}/.claude/sandbox" "${SS}/bin"
 cp "${SB}/start.sh" "${SS}/.claude/sandbox/start.sh"
