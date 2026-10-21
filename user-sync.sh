@@ -17,9 +17,9 @@ fi
 
 cd "${USER_CONFIG}"
 
-# A read-only clone has no remote; hand the changes back as a patch to review
-# and apply from a trusted checkout (git am < file).
-if [ -z "$(git remote)" ]; then
+# A clone made from CS_USER_CONFIG_REPO is read-only; hand the changes back as a
+# patch to review and apply from a trusted checkout (git am < file).
+if [ -n "${CS_USER_CONFIG_REPO:-}" ]; then
     git add -A
     git diff --cached --quiet || git commit -q -m "${1:-Update user rules and memories}"
     patch=/workspace/.tmp/claude-user.patch

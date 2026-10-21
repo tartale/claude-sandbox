@@ -328,13 +328,17 @@ export CS_USER_CONFIG_REPO=you/claude-user
 export CS_USER_CONFIG_TOKEN=github_pat_...   # fine-grained, only that repo, Contents: Read-only
 ```
 
-At start the entrypoint clones the repo into the container, uses the token for that one command, and removes it from the environment before Claude starts. The clone has no remote and vanishes with the container. `claude-user-sync` commits locally and writes `.tmp/claude-user.patch` in the project; review it and apply it from your own checkout with the stub `init.sh` generated:
+At start the entrypoint clones the repo into the container with the token. The token stays in the environment, but it can only read, so the session can fetch later changes and can never push them. The clone vanishes with the container. `claude-user-sync` commits locally and writes `.tmp/claude-user.patch` in the project; review it and apply it from your own checkout with the stub `init.sh` generated:
 
 ```bash
 .claude/sandbox/sync.sh
 ```
 
 `sync.sh show` pages through the patch and `sync.sh status` says whether one is waiting. `apply` (the default) shows what the patch changes (`d` shows the colored diff), asks before applying, then runs `git am` in the checkout named by `CS_USER_CONFIG_CHECKOUT` (default `~/.claude-user`) and pushes. The script is mounted read-only in the sandbox like the other launch scripts, so a session cannot edit it.
+
+#### Keeping running sessions current
+
+Changes you push to the user config repo reach a running session by themselves. The container passes Claude Code a `UserPromptSubmit` hook (`--settings`, so your own settings are untouched) that runs `claude-user-pull --hook` before each prompt. At most every five minutes it fetches the repo; if something new landed, it brings the clone up to date and puts "user preferences changed" plus the diff into the agent's context. You do not need to tell each agent to re-read. If the clone has local changes that are not applied yet, it reports the change without pulling and tells the agent to run `claude-user-sync` first. Run `claude-user-pull` by hand to check on demand.
 
 Don't grant the project's sandbox token access to the user config repo, or the protection is moot. Set these two variables in your shell, not in `.env`.
 
@@ -377,7 +381,7 @@ If you previously hand-symlinked the memory directory into a project, drop the s
 | `PLUGINS` | Path to a plugin script or directory of plugin scripts to install |
 | `CS_USER_CONFIG` | Path to a checkout of your user config repo (user-scope rules and memories). Unset disables the user scope. Read-write; see below for a read-only alternative. |
 | `CS_USER_CONFIG_REPO` | `owner/name` of your user config repo, cloned read-only into the container at start. Requires `CS_USER_CONFIG_TOKEN`; mutually exclusive with `CS_USER_CONFIG`. See [Read-only user scope](#read-only-user-scope). |
-| `CS_USER_CONFIG_TOKEN` | Fine-grained token with read-only Contents access to that one repo. Removed from the environment before Claude starts. |
+| `CS_USER_CONFIG_TOKEN` | Fine-grained token with read-only Contents access to that one repo. Stays in the environment so `claude-user-pull` can fetch later changes; it cannot push. |
 | `CS_USER_CONFIG_CHECKOUT` | Your own checkout of the user config repo on the host, where `sync.sh` applies the sandbox's patch (default `~/.claude-user`). Not read by the launcher. |
 | `CS_DOCKER_LOGIN` | Set to `true` to mount the host's `~/.docker/config.json` (or `$DOCKER_CONFIG/config.json`) read-only so the container's docker CLI can use your registry logins. Off by default; the credentials are readable by anything in the container. Logins held in a credential helper (`credsStore`, e.g. macOS Keychain) are not available in the container. |
 | `CS_PIDS_LIMIT` | Maximum number of processes in the container (`docker run --pids-limit`). Unset means no limit. |
