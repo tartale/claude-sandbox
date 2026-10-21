@@ -57,6 +57,7 @@ check() { local name=$1; shift; if "$@"; then pass "${name}"; else fail "${name}
 
 has() { grep -qxF -- "$1" <<<"${OUT}"; }
 lacks() { ! has "$1"; }
+absent() { ! "$@"; }
 mentions() { grep -qF -- "$1" <<<"${OUT}"; }
 
 reset_project() {
@@ -149,6 +150,19 @@ check "repo plus token passes both names through" test "${rc}" -eq 0
 check "  ...the repo" has "ARG:CS_USER_CONFIG_REPO"
 check "  ...the token (by name, never its value)" has "ARG:CS_USER_CONFIG_TOKEN"
 check "  ...without mounting anything at the user config path" lacks ":/home/claude/.claude-user"
+
+# --- --add-host reaches the container's /etc/hosts -----------------------------
+HOSTS_FILE="${WORK}/home/.claude-sandbox-hosts"
+reset_project
+run_launcher CS_DOCKER_FLAGS="--add-host=db.local:10.1.2.3 --add-host other:10.9.9.9"
+check "--add-host=NAME:IP is written to the hosts file" grep -qx '10.1.2.3 db.local' "${HOSTS_FILE}"
+check "--add-host NAME:IP is written to the hosts file" grep -qx '10.9.9.9 other' "${HOSTS_FILE}"
+run_launcher CS_DOCKER_FLAGS="--add-host=db.local:10.1.2.3"
+check "entries do not accumulate across launches" test "$(grep -c 'db.local' "${HOSTS_FILE}")" -eq 1
+check "...and earlier ones are gone" absent grep -q other "${HOSTS_FILE}"
+run_launcher CS_DOCKER_FLAGS="--add-host=host.docker.internal:host-gateway"
+check "host-gateway warns" mentions "host-gateway"
+check "...and is not written" absent grep -q host.docker.internal "${HOSTS_FILE}"
 
 # --- container name ---------------------------------------------------------
 run_launcher CS_CONTAINER_NAME=my-box
