@@ -20,6 +20,7 @@ Set the project up once (see [Setting up a project](#setting-up-a-project)); tha
 ```bash
 .claude/sandbox/run.sh      # interactive: Claude Code starts in the container in your terminal
 .claude/sandbox/start.sh    # background: the container runs detached, Claude waits on its tty
+.claude/sandbox/restart.sh  # rebuild the image, stop the container, start it again in the background
 ```
 
 Claude Code starts inside a container with the project directory as `/workspace`. The launcher uses the image `ghcr.io/tartale/claude-sandbox:<tag>` (the tag defaults to the project name; override with `CS_IMAGE_TAG` and `CS_IMAGE_REPO`). Docker pulls it if it exists in the registry; otherwise build it first with `.claude/sandbox/build.sh`. Published release images (`:latest`, language tags) reflect the last tagged release, not the latest `main`.
@@ -42,6 +43,8 @@ Both scripts forward their arguments to `claude`:
 ```
 
 For `start.sh` the arguments apply to the container it starts; a container that is already running is left as it is.
+
+`restart.sh` runs `build.sh`, stops the container and runs `start.sh`. Without arguments it reuses the `claude` arguments of the container it replaces; arguments you pass replace them. Environment variables such as `CS_USER_CONFIG_TOKEN` are read fresh from your shell, so this is how a running sandbox picks up a changed one.
 
 ### Using a specific image tag
 
@@ -69,7 +72,7 @@ Run this from a project's root, on your host (not inside a sandbox), to set the 
 
 It:
 
-- creates `.claude/sandbox/` stubs (a stub you have not edited since `init.sh` last wrote it is updated to the current template; an edited one is asked about only when the template has changed since your last run, so a file you maintain such as `plugin.sh` does not prompt every time; Enter shows the diff first; `m` three-way merges your edits into the new template using the template kept in `.claude/sandbox/.init-base/`, leaving conflict markers where they overlap; a file that is replaced is first copied to `<name>.bak.<timestamp>`, which is git-excluded locally; `.claude/sandbox/.init-hashes` records what was last written and the template seen): `plugin.sh` is where the project's plugins and packages go; `build.sh` builds the project's image from it; `run.sh` starts the sandbox interactively; `start.sh` starts it in the background; `sync.sh` applies the patch `claude-user-sync` writes (see [Read-only user scope](#read-only-user-scope)). They wrap the `build-image.sh` and `claude-sandbox.sh` one-liners, and use the repo name as the image tag.
+- creates `.claude/sandbox/` stubs (a stub you have not edited since `init.sh` last wrote it is updated to the current template; an edited one is asked about only when the template has changed since your last run, so a file you maintain such as `plugin.sh` does not prompt every time; Enter shows the diff first; `m` three-way merges your edits into the new template using the template kept in `.claude/sandbox/.init-base/`, leaving conflict markers where they overlap; a file that is replaced is first copied to `<name>.bak.<timestamp>`, which is git-excluded locally; `.claude/sandbox/.init-hashes` records what was last written and the template seen): `plugin.sh` is where the project's plugins and packages go; `build.sh` builds the project's image from it; `run.sh` starts the sandbox interactively; `start.sh` starts it in the background; `restart.sh` rebuilds the image and restarts that container; `sync.sh` applies the patch `claude-user-sync` writes (see [Read-only user scope](#read-only-user-scope)). They wrap the `build-image.sh` and `claude-sandbox.sh` one-liners, and use the repo name as the image tag.
 - checks that `envsubst` is installed (needed to read `.env`) and stops with the install command if it is missing, before asking anything; `plugin.sh` lists every built-in plugin, commented out.
 - adds the `CS_` launcher settings (`CS_IMAGE_REPO`, `CS_IMAGE_TAG`, `CS_ENV_FILE`, `CS_DOCKER_LOGIN`, and commented-out `CS_USER_CONFIG`, `CS_DOCKER_FLAGS`, `CS_PIDS_LIMIT`, `CS_MEMORY`) with their defaults to `.envrc` in the project root; names already there are left alone.
 - opens GitHub's token page with a single-repo fine-grained token pre-filled (Contents, Pull requests and Issues read/write), validates the token you paste (no Administration, can push, no other private repos), and writes `CS_GITHUB_TOKEN` to `.env` at mode 600, excluded from git locally.

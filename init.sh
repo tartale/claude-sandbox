@@ -131,7 +131,7 @@ ok "repo $REPO"
 # --- stub templates, rendered to a temp dir so they can be compared ------------
 IMAGE_TAG=$(printf '%s' "${REPO#*/}" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_.\n-' '-')
 STUB_OUT=.claude/sandbox
-STUB_NAMES="build.sh run.sh start.sh sync.sh plugin.sh"
+STUB_NAMES="build.sh run.sh start.sh restart.sh sync.sh plugin.sh"
 STUB_DIR=$(mktemp -d)
 trap 'rm -rf "$STUB_DIR"' EXIT
 render_stub() {   # name, content on stdin
@@ -203,6 +203,25 @@ else
     echo "started $NAME"
 fi
 printf '\nAttach (detach with ctrl-p ctrl-q):\n\ndocker attach %s\n\nStop:\n\ndocker stop %s\n' "$NAME" "$NAME"
+EOF2
+render_stub restart.sh <<'EOF2'
+#!/usr/bin/env bash
+# Rebuilds the image, stops this project's container and starts it again in the
+# background. Usage: .claude/sandbox/restart.sh [claude args]
+# Without arguments it reuses the claude arguments of the container it replaces.
+set -euo pipefail
+
+THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NAME="${CS_CONTAINER_NAME:-cs-@TAG@}"
+
+if [ "$#" -eq 0 ]; then
+    while IFS= read -r arg; do set -- "$@" "$arg"; done \
+        < <(docker inspect -f '{{range .Config.Cmd}}{{println .}}{{end}}' "$NAME" 2>/dev/null || true)
+fi
+
+"${THIS_SCRIPT_DIR}/build.sh"
+docker stop "$NAME" >/dev/null 2>&1 || true
+exec "${THIS_SCRIPT_DIR}/start.sh" "$@"
 EOF2
 render_stub sync.sh <<'EOF2'
 #!/usr/bin/env bash
