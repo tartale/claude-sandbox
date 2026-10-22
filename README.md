@@ -403,7 +403,7 @@ Nothing technical stops a session from merging its own pull request. The sandbox
 
 - add required status checks (for example `test`) to the ruleset once CI exists, so red code cannot merge;
 - CI runs what the PR contains, including `plugin.sh`, the Dockerfile and the workflows, so keep registry and deploy secrets out of workflows that run on pull requests, and build and push images only from `main` or tags (this repo's `release.yml` runs on tags only);
-- give PR workflows read-only `GITHUB_TOKEN` permissions (`permissions: contents: read`), as this repo's do;
+- give PR workflows read-only `GITHUB_TOKEN` permissions (`permissions: contents: read`); the sandbox token has no `workflow` scope, so a session cannot push workflow files, and you add this yourself;
 - read the diff of `plugin.sh`, the Dockerfile, `.github/` and `.claude/sandbox/` before merging.
 
 To use a different file name, set `CS_ENV_FILE`:
