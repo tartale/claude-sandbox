@@ -157,6 +157,7 @@ ENVF="${WORK}/proj/.env"
 check "adds the user-config repo, commented out, pre-filled from the owner" contains "${ENVF}" '# CS_USER_CONFIG_REPO=o/claude-user'
 check "adds the user-config token, commented out and empty" contains "${ENVF}" '# CS_USER_CONFIG_TOKEN='
 check "puts a comment directly above each" test "$(awk '/^# CS_USER_CONFIG_(REPO|TOKEN)=/ && prev ~ /^# [A-Z].*\.$/ { n++ } { prev = $0 } END { print n + 0 }' "${ENVF}")" -eq 2
+check "the token comment says how to share it across projects" contains "${ENVF}" 'To share one token across projects'
 check "starts with a header on how the file is read" contains "${ENVF}" '# Read as data, never run as shell'
 ENVRC="${WORK}/proj/.envrc"
 check ".envrc comments every variable directly above it" test "$(awk '/^(# )?(export )?[A-Z_]+=/ && prev ~ /^# [A-Za-z-]/ { n++ } { prev = $0 } END { print n + 0 }' "${ENVRC}")" -eq "$(grep -cE '^(# )?(export )?[A-Z_]+=' "${ENVRC}")"

@@ -618,7 +618,8 @@ add_env_setting() {   # NAME VALUE COMMENT
 add_env_setting CS_USER_CONFIG_REPO "${REPO%%/*}/claude-user" "Private repo (owner/name) with your user-scope rules and memories, cloned read-only into the sandbox at start.
 Optional: without it the session has no user scope. Set it together with CS_USER_CONFIG_TOKEN."
 add_env_setting CS_USER_CONFIG_TOKEN "" "Fine-grained token with Contents: Read-only on that one repo. It stays in the environment so claude-user-pull can fetch later changes; it cannot push.
-This file is readable inside the sandbox, so never give this token, or the project's, access to anything else."
+This file is readable inside the sandbox, so never give this token, or the project's, access to anything else.
+To share one token across projects, export it once on the host and write CS_USER_CONFIG_TOKEN=\$YOUR_VARIABLE here: \$VAR is expanded from the host environment."
 chmod 600 "$ENV_FILE"
 if git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q "$ENV_FILE"; then
     echo "$ENV_FILE" >> "$(git rev-parse --git-dir)/info/exclude"
