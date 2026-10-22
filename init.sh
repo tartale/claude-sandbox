@@ -536,7 +536,7 @@ add_setting CS_PIDS_LIMIT "" 0 "Maximum number of processes in the container (do
 add_setting CS_MEMORY "" 0 "Memory limit for the container (docker run --memory), e.g. 8g. Unset means no limit."
 add_setting CS_CONTAINER_NAME "" 0 "Container name. Default: cs-<repo-name> (run.sh appends -2, -3... while one is running); claude-sandbox.sh on its own adds a random suffix."
 add_setting CS_REF "" 0 "Launcher version for this run: a commit, tag or branch of tartale/claude-sandbox. Overrides the commit init.sh pinned in .claude/sandbox/ref."
-add_setting CS_USER_CONFIG_CHECKOUT "~/.claude-user" 0 "Your own checkout of the user config repo on the host, where sync.sh applies the sandbox's patch. The launcher does not read it."
+add_setting CS_USER_CONFIG_CHECKOUT "\$HOME/.claude-user" 0 "Your own checkout of the user config repo on the host, where sync.sh applies the sandbox's patch. The launcher does not read it."
 add_setting LANGUAGE_VERSIONS "" 0 "build.sh: language version pins, space-separated <language>-<version>, e.g. \"go-1.25.10\". A plugin with no entry here installs the latest stable."
 add_setting CLAUDE_VERSION "" 0 "build.sh: Claude Code version baked into the image. Default: latest."
 if command -v direnv >/dev/null; then note "to load them:"; cmd "direnv allow"; else note "direnv not installed; export these in your shell instead"; fi
