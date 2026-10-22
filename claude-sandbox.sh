@@ -74,8 +74,9 @@ esac
 # ~/.claude.json, so a sandbox sees only its own transcripts, plans and history and
 # cannot plant settings, hooks or skills that run in Claude Code on the host. Every
 # project is mounted at /workspace, so inside the container they all share the
-# project key "-workspace"; the slug names the host-side directory.
-CS_PROJECT_SLUG=$(pwd | sed 's#[^a-zA-Z0-9-]#-#g')
+# project key "-workspace"; the project's directory name names the host-side directory,
+# so moving a project keeps its state (two projects with the same name share one).
+CS_PROJECT_SLUG=$(basename "$(pwd)" | sed 's#[^a-zA-Z0-9._-]#-#g')
 CS_PROJECT_STATE="${HOME}/.claude-sandbox/${CS_PROJECT_SLUG}"
 mkdir -p "${CS_PROJECT_STATE}/.claude/projects/-workspace"
 [ -e "${CS_PROJECT_STATE}/.claude.json" ] || echo '{"hasCompletedOnboarding":true}' > "${CS_PROJECT_STATE}/.claude.json"

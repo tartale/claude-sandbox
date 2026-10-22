@@ -4,7 +4,7 @@ Runs [Claude Code](https://github.com/anthropics/claude-code) in a Docker contai
 
 Images are tagged `ghcr.io/tartale/claude-sandbox:<tag>` (the repository is configurable with `CS_IMAGE_REPO`). CI does not build or publish them on every change; you build the image you need with [`build-image.sh`](#building-a-custom-image), or the maintainer publishes a release by pushing a `v*` tag.
 
-Each project gets its own Claude state directory, `~/.claude-sandbox/<project path>/`, mounted as `~/.claude` and `~/.claude.json` in the container. Only your OAuth credentials are copied in from the host's `~/.claude/.credentials.json`, so you stay logged in; see [Claude state](#claude-state).
+Each project gets its own Claude state directory, `~/.claude-sandbox/<project name>/`, mounted as `~/.claude` and `~/.claude.json` in the container. Only your OAuth credentials are copied in from the host's `~/.claude/.credentials.json`, so you stay logged in; see [Claude state](#claude-state).
 
 The container runs as a user matching your host UID and GID, so files written to the workspace are owned by you. Your shell's umask is also applied inside the container so new files get the expected permissions. Note that on macOS, Docker Desktop runs containers in a Linux VM, so the host umask has no effect — the default umask of the container will be used instead.
 
@@ -281,13 +281,13 @@ Left alone, the sandbox blurs both. Every project is mounted at `/workspace`, so
 
 ### Claude state
 
-The launcher does not mount your host `~/.claude` or `~/.claude.json`. A sandbox that could would see every other project's transcripts and plans, and could plant settings, hooks or skills there that run the next time you use Claude Code on the host. Instead each project has `~/.claude-sandbox/<project path>/` with its own `.claude/` and `.claude.json`.
+The launcher does not mount your host `~/.claude` or `~/.claude.json`. A sandbox that could would see every other project's transcripts and plans, and could plant settings, hooks or skills there that run the next time you use Claude Code on the host. Instead each project has `~/.claude-sandbox/<project name>/` with its own `.claude/` and `.claude.json`.
 
-Your credentials are the only thing carried between them, and the launcher does it at each start: it copies `~/.claude/.credentials.json` into the project's directory, and copies the project's file back to the host when the sandbox renewed it (the newer copy wins). A `/login` inside any sandbox therefore reaches the others when they next start. Settings, skills, commands and plugins in your host `~/.claude` are not visible in the sandbox. On macOS, where Claude Code keeps credentials in the Keychain, log in once inside the sandbox; the credentials are then kept in the file above.
+Your credentials are the only thing carried between them, and the launcher does it at each start: it copies `~/.claude/.credentials.json` into the project's directory, and copies the project's file back to the host when the sandbox renewed it (the newer copy wins). The directory is named after the project's folder, not its full path, so moving a project keeps its state; two projects with the same folder name share one. A `/login` inside any sandbox therefore reaches the others when they next start. Settings, skills, commands and plugins in your host `~/.claude` are not visible in the sandbox. On macOS, where Claude Code keeps credentials in the Keychain, log in once inside the sandbox; the credentials are then kept in the file above.
 
 ### Project scope
 
-Each project gets its own state directory on the host, keyed by its real path (see [Claude state](#claude-state)), and its memory directory is bind-mounted from the project itself:
+Each project gets its own state directory on the host, keyed by the project's directory name (see [Claude state](#claude-state)), and its memory directory is bind-mounted from the project itself:
 
 ```
 <project>/CLAUDE.md                    project rules            (commit)
@@ -345,14 +345,6 @@ Don't grant the project's sandbox token access to the user config repo, or the p
 Ask whether it would still be true on a different project. "Run the full test suite before pushing" is user scope; "run `./actual test` before pushing" is project scope. Claude is given this rule in the generated `CLAUDE.md`, but it's worth knowing when you're filing things by hand.
 
 ### Migrating an existing setup
-
-Transcripts and history of a project that ran under the old mount are in `~/.claude/projects/<project path with / as ->/` on the host. To keep them in the project's new state directory:
-
-```bash
-slug=$(pwd | sed 's#[^a-zA-Z0-9-]#-#g')    # run in the project
-mkdir -p ~/.claude-sandbox/$slug/.claude/projects
-mv ~/.claude/projects/$slug ~/.claude-sandbox/$slug/.claude/projects/-workspace
-```
 
 If you've been running the sandbox already, everything from every project is in `~/.claude/projects/-workspace/` on the host. Nothing is deleted — that bucket is simply no longer used, since each project now mounts its own. To carry old memories forward, sort them by hand:
 

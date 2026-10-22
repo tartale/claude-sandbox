@@ -67,8 +67,7 @@ reset_project() {
 
 # --- per-project Claude state -------------------------------------------------
 reset_project
-SLUG=$(echo "${WORK}/proj" | sed 's#[^a-zA-Z0-9-]#-#g')
-ST="${WORK}/home/.claude-sandbox/${SLUG}"
+ST="${WORK}/home/.claude-sandbox/proj"
 mkdir -p "${WORK}/home/.claude/projects/other"
 echo secret > "${WORK}/home/.claude/projects/other/transcript"
 echo '{"projects":{"/other":{}}}' > "${WORK}/home/.claude.json"
@@ -94,6 +93,12 @@ rm -f "${WORK}/home/.claude/.credentials.json"
 touch -d '2003-01-01' "${ST}/.claude/.credentials.json"
 run_launcher
 check "a sandbox login is stored on a host with none" test -f "${WORK}/home/.claude/.credentials.json"
+
+mkdir -p "${WORK}/elsewhere/proj"
+OUT=$(cd "${WORK}/elsewhere/proj" && env -i PATH="${WORK}/bin:${PATH}" HOME="${WORK}/home" \
+    script -qec "bash ${ROOT}/claude-sandbox.sh" /dev/null </dev/null 2>&1 | tr -d '\r')
+check "a project moved to another folder keeps its state dir" has "ARG:${ST}/.claude:/home/claude/.claude"
+rm -rf "${WORK}/elsewhere"
 
 # --- hardening flags --------------------------------------------------------
 reset_project
