@@ -156,7 +156,11 @@ run_init "${NO3}"
 ENVF="${WORK}/proj/.env"
 check "adds the user-config repo, commented out, pre-filled from the owner" contains "${ENVF}" '# CS_USER_CONFIG_REPO=o/claude-user'
 check "adds the user-config token, commented out and empty" contains "${ENVF}" '# CS_USER_CONFIG_TOKEN='
-check "puts a comment above each" test "$(grep -c '^# [A-Z].*\.$' "${ENVF}")" -eq 2
+check "puts a comment directly above each" test "$(awk '/^# CS_USER_CONFIG_(REPO|TOKEN)=/ && prev ~ /^# [A-Z].*\.$/ { n++ } { prev = $0 } END { print n + 0 }' "${ENVF}")" -eq 2
+check "starts with a header on how the file is read" contains "${ENVF}" '# Read as data, never run as shell'
+ENVRC="${WORK}/proj/.envrc"
+check ".envrc comments every variable directly above it" test "$(awk '/^(# )?(export )?[A-Z_]+=/ && prev ~ /^# [A-Za-z-]/ { n++ } { prev = $0 } END { print n + 0 }' "${ENVRC}")" -eq "$(grep -cE '^(# )?(export )?[A-Z_]+=' "${ENVRC}")"
+check ".envrc documents the build and sync variables" test "$(grep -cE '^# export (LANGUAGE_VERSIONS|CLAUDE_VERSION|CS_CONTAINER_NAME|CS_REF|CS_USER_CONFIG_CHECKOUT)=' "${ENVRC}")" -eq 5
 check ".env is mode 600" mode_is "${ENVF}" 600
 check ".env is git-excluded" contains "${WORK}/proj/.git/info/exclude" '.env'
 printf 'CS_USER_CONFIG_REPO=me/mine\n' > "${ENVF}"
@@ -164,6 +168,9 @@ run_init "${NO3}"
 check "an existing repo setting is kept" contains "${ENVF}" 'CS_USER_CONFIG_REPO=me/mine'
 check "...and not repeated" test "$(grep -cE '^#? ?CS_USER_CONFIG_REPO=' "${ENVF}")" -eq 1
 check "...while the missing token is added" contains "${ENVF}" '# CS_USER_CONFIG_TOKEN='
+check "the header is written once, ahead of existing entries" test "$(grep -c '^# Read as data' "${ENVF}")" -eq 1 -a "$(head -n 1 "${ENVF}" | cut -c1-12)" = "# Passed int"
+run_init "${NO3}"
+check "...and not repeated on another run" test "$(grep -c '^# Read as data' "${ENVF}")" -eq 1
 
 # --- restart.sh: build, stop, start with the old arguments ------------------
 new_project
