@@ -43,7 +43,9 @@ elif [ -n "$CS_USER_CONFIG_REPO" ]; then
     fi
 fi
 
-printf '[url "https://github.com/"]\n\tinsteadOf = git@github.com:\n' > /tmp/gitconfig
+# .git/config is read-only in the container, so git must not try to write upstream
+# tracking into it (checkout -b and worktree add -b from a remote branch would fail).
+printf '[url "https://github.com/"]\n\tinsteadOf = git@github.com:\n[branch]\n\tautoSetupMerge = false\n' > /tmp/gitconfig
 if [ -n "$GITHUB_TOKEN" ]; then
     (umask 077; printf '#!/bin/sh\necho username=x-access-token\necho password=%s\n' "$GITHUB_TOKEN" > /tmp/git-credential-github-token)
     chown claude:claude /tmp/git-credential-github-token
