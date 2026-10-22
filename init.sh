@@ -170,16 +170,24 @@ render_stub build.sh <<'EOF2'
 set -euo pipefail
 
 THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The launcher version: CS_REF (a commit, tag or branch of tartale/claude-sandbox), else
+# the commit init.sh pinned in the file "ref" next to this script, else main.
+export CS_REF="${CS_REF:-$(cat "${THIS_SCRIPT_DIR}/ref" 2>/dev/null || echo main)}"
 
 export PLUGINS="${THIS_SCRIPT_DIR}/plugin.sh"
 export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
 
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/${CS_REF}/build-image.sh)"
 EOF2
 render_stub run.sh <<'EOF2'
 #!/usr/bin/env bash
 # Starts this project's sandbox interactively. Usage: .claude/sandbox/run.sh [claude args]
 set -euo pipefail
+
+THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The launcher version: CS_REF (a commit, tag or branch of tartale/claude-sandbox), else
+# the commit init.sh pinned in the file "ref" next to this script, else main.
+export CS_REF="${CS_REF:-$(cat "${THIS_SCRIPT_DIR}/ref" 2>/dev/null || echo main)}"
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
@@ -197,13 +205,18 @@ if [ -z "${CS_CONTAINER_NAME:-}" ]; then
     export CS_CONTAINER_NAME
 fi
 
-exec /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox --name "@REPO@" "$@"
+exec /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/${CS_REF}/claude-sandbox.sh)" claude-sandbox --name "@REPO@" "$@"
 EOF2
 render_stub start.sh <<'EOF2'
 #!/usr/bin/env bash
 # Starts this project's sandbox in the background; claude waits on a detached tty.
 # Usage: .claude/sandbox/start.sh [claude args]
 set -euo pipefail
+
+THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The launcher version: CS_REF (a commit, tag or branch of tartale/claude-sandbox), else
+# the commit init.sh pinned in the file "ref" next to this script, else main.
+export CS_REF="${CS_REF:-$(cat "${THIS_SCRIPT_DIR}/ref" 2>/dev/null || echo main)}"
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
@@ -218,7 +231,7 @@ if [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || true)" = t
 else
     docker rm "$NAME" >/dev/null 2>&1 || true   # a stopped one from an earlier start
     CS_DOCKER_FLAGS="-d -t --restart=unless-stopped ${CS_DOCKER_FLAGS:-}" \
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox --name "@REPO@" "$@" >/dev/null
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/${CS_REF}/claude-sandbox.sh)" claude-sandbox --name "@REPO@" "$@" >/dev/null
     echo "started $NAME"
 fi
 printf '\nAttach (detach with ctrl-p ctrl-q):\n\ndocker attach %s\n\nStop:\n\ndocker stop %s\n' "$NAME" "$NAME"
@@ -470,6 +483,31 @@ for name in $STUB_NAMES; do
     cp "$STUB_DIR/$name" "$STUB_OUT/.init-base/$name"
 done
 printf '%s' "$HASHES" > "$STUB_OUT/.init-hashes"
+
+# --- launcher version -------------------------------------------------------
+# The stubs fetch build-image.sh and claude-sandbox.sh at the commit named in
+# .claude/sandbox/ref, so a later change to main does not run on this machine until
+# init.sh is run again. CS_REF=<commit|tag|branch> chooses what to pin (default main).
+say "Launcher version"
+PIN_REF="${CS_REF:-main}"
+if [[ "$PIN_REF" =~ ^[0-9a-f]{40}$ ]]; then
+    PIN_SHA="$PIN_REF"
+else
+    PIN_SHA=$(git ls-remote https://github.com/tartale/claude-sandbox.git "refs/heads/$PIN_REF" "refs/tags/$PIN_REF" "refs/tags/$PIN_REF^{}" 2>/dev/null \
+        | awk '/\^\{\}$/ { p = $1 } !/\^\{\}$/ && !f { f = $1 } END { print (p ? p : f) }') || PIN_SHA=
+fi
+if [ -n "$PIN_SHA" ]; then
+    OLD_SHA=$(cat "$STUB_OUT/ref" 2>/dev/null || true)
+    printf '%s\n' "$PIN_SHA" > "$STUB_OUT/ref"
+    if [ "$OLD_SHA" = "$PIN_SHA" ]; then
+        note "launcher stays at ${PIN_SHA:0:7} ($PIN_REF)"
+    else
+        ok "launcher pinned to ${PIN_SHA:0:7} ($PIN_REF)${OLD_SHA:+, was ${OLD_SHA:0:7}}"
+    fi
+    note "to move the pin, run init.sh again; to try a branch once: CS_REF=<branch> .claude/sandbox/run.sh"
+else
+    warn "could not resolve $PIN_REF on GitHub; the stubs fetch main until init.sh can pin a commit"
+fi
 
 # --- launcher settings in .envrc ---------------------------------------------
 # Add any CS_ launcher variable that .envrc does not mention yet, with its default;

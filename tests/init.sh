@@ -215,6 +215,59 @@ check "start.sh runs the container detached with --restart=unless-stopped" conta
 start CS_DOCKER_FLAGS="--restart=no"
 check "a --restart in CS_DOCKER_FLAGS comes after it, so it wins" contains "${SS}/flags" '--restart=unless-stopped --restart=no'
 
+# --- launcher pin ---------------------------------------------------------------
+SHA1=1111111111111111111111111111111111111111
+SHA2=2222222222222222222222222222222222222222
+REAL_GIT=$(command -v git)
+rm -f "${BIN}/git"
+cat > "${BIN}/git" <<WRAP
+#!/bin/sh
+if [ "\$1" = ls-remote ]; then
+    [ -n "\$LSR_FAIL" ] && exit 1
+    printf '%s\trefs/heads/main\n' "\$(cat ${WORK}/lsr-main)"
+    printf '%s\trefs/heads/dev\n' ${SHA2}
+    exit 0
+fi
+exec ${REAL_GIT} "\$@"
+WRAP
+chmod +x "${BIN}/git"
+echo "${SHA1}" > "${WORK}/lsr-main"
+
+new_project
+run_init "${NO3}"
+check "init pins the launcher to main's commit" contains "${SB}/ref" "${SHA1}"
+check "...and reports it" mentions "pinned to 1111111"
+check "the stubs read the pin" contains "${SB}/build.sh" '${THIS_SCRIPT_DIR}/ref'
+echo "${SHA2}" > "${WORK}/lsr-main"
+run_init "${NO3}"
+check "running init again moves the pin" contains "${SB}/ref" "${SHA2}"
+check "...and reports the old commit" mentions "was 1111111"
+run_init "${NO3}"
+check "an unchanged pin is reported as staying" mentions "stays at 2222222"
+OUT=$(cd "${WORK}/proj" && printf "${NO3}" | env -i PATH="${BIN}" HOME="${WORK}/home" NO_COLOR=1 CS_REF=dev \
+    script -qec "bash ${ROOT}/init.sh" /dev/null 2>&1 | tr -d '\r')
+check "CS_REF chooses the ref to pin" contains "${SB}/ref" "${SHA2}"
+OUT=$(cd "${WORK}/proj" && printf "${NO3}" | env -i PATH="${BIN}" HOME="${WORK}/home" NO_COLOR=1 CS_REF=${SHA1} \
+    script -qec "bash ${ROOT}/init.sh" /dev/null 2>&1 | tr -d '\r')
+check "a commit SHA is pinned without a lookup" contains "${SB}/ref" "${SHA1}"
+new_project
+OUT=$(cd "${WORK}/proj" && printf "${NO3}" | env -i PATH="${BIN}" HOME="${WORK}/home" NO_COLOR=1 LSR_FAIL=true \
+    script -qec "bash ${ROOT}/init.sh" /dev/null 2>&1 | tr -d '\r')
+check "an unresolvable ref writes no pin" test ! -e "${SB}/ref"
+check "...and warns that main is used" mentions "fetch main"
+new_project; run_init "${NO3}" >/dev/null
+RP="${WORK}/refpin"
+mkdir -p "${RP}/.claude/sandbox" "${RP}/bin"
+cp "${SB}/start.sh" "${RP}/.claude/sandbox/start.sh"
+printf '#!/bin/sh\nfor a; do u=$a; done\necho "$u" > %s/url\n' "${RP}" > "${RP}/bin/curl"
+printf '#!/bin/sh\nexit 1\n' > "${RP}/bin/docker"
+chmod +x "${RP}/bin/curl" "${RP}/bin/docker"
+fetched() { env -i PATH="${RP}/bin:${BIN}" "$@" bash "${RP}/.claude/sandbox/start.sh" >/dev/null 2>&1; cat "${RP}/url"; }
+check "with no pin the stub fetches main" contains <(fetched) "/claude-sandbox/main/"
+echo "${SHA1}" > "${RP}/.claude/sandbox/ref"
+check "with a pin the stub fetches that commit" contains <(fetched) "/claude-sandbox/${SHA1}/"
+check "CS_REF beats the pin" contains <(fetched CS_REF=dev) "/claude-sandbox/dev/"
+
 # --- prerequisites ----------------------------------------------------------
 new_project
 rm -f "${BIN}/envsubst"
