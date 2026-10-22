@@ -258,6 +258,11 @@ check "CS_REF chooses the ref to pin" contains "${SB}/ref" "${SHA2}"
 OUT=$(cd "${WORK}/proj" && printf "${NO3}" | env -i PATH="${BIN}" HOME="${WORK}/home" NO_COLOR=1 CS_REF=${SHA1} \
     script -qec "bash ${ROOT}/init.sh" /dev/null 2>&1 | tr -d '\r')
 check "a commit SHA is pinned without a lookup" contains "${SB}/ref" "${SHA1}"
+OUT=$(cd "${WORK}/proj" && printf "${NO3}" | env -i PATH="${BIN}" HOME="${WORK}/home" NO_COLOR=1 CS_REF=latest \
+    script -qec "bash ${ROOT}/init.sh" /dev/null 2>&1 | tr -d '\r')
+check "CS_REF=latest removes an existing pin" test ! -e "${SB}/ref"
+check "...and says the launcher follows main" mentions "the launcher follows main"
+check "...without warning that the ref could not be resolved" lacks "could not resolve"
 new_project
 OUT=$(cd "${WORK}/proj" && printf "${NO3}" | env -i PATH="${BIN}" HOME="${WORK}/home" NO_COLOR=1 LSR_FAIL=true \
     script -qec "bash ${ROOT}/init.sh" /dev/null 2>&1 | tr -d '\r')
@@ -271,6 +276,7 @@ printf '#!/bin/sh\nfor a; do u=$a; done\necho "$u" > %s/url\n' "${RP}" > "${RP}/
 printf '#!/bin/sh\nexit 1\n' > "${RP}/bin/docker"
 chmod +x "${RP}/bin/curl" "${RP}/bin/docker"
 fetched() { env -i PATH="${RP}/bin:${BIN}" "$@" bash "${RP}/.claude/sandbox/start.sh" >/dev/null 2>&1; cat "${RP}/url"; }
+check "CS_REF=latest makes the stub follow main" contains <(fetched CS_REF=latest) "/claude-sandbox/main/"
 check "with no pin the stub fetches main" contains <(fetched) "/claude-sandbox/main/"
 echo "${SHA1}" > "${RP}/.claude/sandbox/ref"
 check "with a pin the stub fetches that commit" contains <(fetched) "/claude-sandbox/${SHA1}/"

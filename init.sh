@@ -172,7 +172,9 @@ set -euo pipefail
 THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The launcher version: CS_REF (a commit, tag or branch of tartale/claude-sandbox), else
 # the commit init.sh pinned in the file "ref" next to this script, else main.
+# CS_REF=latest follows main.
 export CS_REF="${CS_REF:-$(cat "${THIS_SCRIPT_DIR}/ref" 2>/dev/null || echo main)}"
+[ "${CS_REF}" != latest ] || CS_REF=main
 
 export PLUGINS="${THIS_SCRIPT_DIR}/plugin.sh"
 export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
@@ -187,7 +189,9 @@ set -euo pipefail
 THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The launcher version: CS_REF (a commit, tag or branch of tartale/claude-sandbox), else
 # the commit init.sh pinned in the file "ref" next to this script, else main.
+# CS_REF=latest follows main.
 export CS_REF="${CS_REF:-$(cat "${THIS_SCRIPT_DIR}/ref" 2>/dev/null || echo main)}"
+[ "${CS_REF}" != latest ] || CS_REF=main
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
@@ -216,7 +220,9 @@ set -euo pipefail
 THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The launcher version: CS_REF (a commit, tag or branch of tartale/claude-sandbox), else
 # the commit init.sh pinned in the file "ref" next to this script, else main.
+# CS_REF=latest follows main.
 export CS_REF="${CS_REF:-$(cat "${THIS_SCRIPT_DIR}/ref" 2>/dev/null || echo main)}"
+[ "${CS_REF}" != latest ] || CS_REF=main
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
@@ -487,10 +493,16 @@ printf '%s' "$HASHES" > "$STUB_OUT/.init-hashes"
 # --- launcher version -------------------------------------------------------
 # The stubs fetch build-image.sh and claude-sandbox.sh at the commit named in
 # .claude/sandbox/ref, so a later change to main does not run on this machine until
-# init.sh is run again. CS_REF=<commit|tag|branch> chooses what to pin (default main).
+# init.sh is run again. CS_REF=<commit|tag|branch> chooses what to pin (default main);
+# CS_REF=latest pins nothing, so the stubs follow main.
 say "Launcher version"
 PIN_REF="${CS_REF:-main}"
-if [[ "$PIN_REF" =~ ^[0-9a-f]{40}$ ]]; then
+if [ "$PIN_REF" = latest ]; then
+    rm -f "$STUB_OUT/ref"
+    ok "no pin: the launcher follows main"
+    note "to pin a commit instead, run init.sh without CS_REF=latest"
+    PIN_SHA=
+elif [[ "$PIN_REF" =~ ^[0-9a-f]{40}$ ]]; then
     PIN_SHA="$PIN_REF"
 else
     PIN_SHA=$(git ls-remote https://github.com/tartale/claude-sandbox.git "refs/heads/$PIN_REF" "refs/tags/$PIN_REF" "refs/tags/$PIN_REF^{}" 2>/dev/null \
@@ -505,7 +517,7 @@ if [ -n "$PIN_SHA" ]; then
         ok "launcher pinned to ${PIN_SHA:0:7} ($PIN_REF)${OLD_SHA:+, was ${OLD_SHA:0:7}}"
     fi
     note "to move the pin, run init.sh again; to try a branch once: CS_REF=<branch> .claude/sandbox/run.sh"
-else
+elif [ "$PIN_REF" != latest ]; then
     warn "could not resolve $PIN_REF on GitHub; the stubs fetch main until init.sh can pin a commit"
 fi
 
@@ -535,7 +547,8 @@ A --restart here replaces start.sh's --restart=unless-stopped."
 add_setting CS_PIDS_LIMIT "" 0 "Maximum number of processes in the container (docker run --pids-limit). Unset means no limit."
 add_setting CS_MEMORY "" 0 "Memory limit for the container (docker run --memory), e.g. 8g. Unset means no limit."
 add_setting CS_CONTAINER_NAME "" 0 "Container name. Default: cs-<repo-name> (run.sh appends -2, -3... while one is running); claude-sandbox.sh on its own adds a random suffix."
-add_setting CS_REF "" 0 "Launcher version for this run: a commit, tag or branch of tartale/claude-sandbox. Overrides the commit init.sh pinned in .claude/sandbox/ref."
+add_setting CS_REF "" 0 "Launcher version: a commit, tag or branch of tartale/claude-sandbox. Overrides the commit init.sh pinned in .claude/sandbox/ref.
+Set to latest to follow main with no pin; init.sh then writes none and removes an existing one."
 add_setting CS_USER_CONFIG_CHECKOUT "\$HOME/.claude-user" 0 "Your own checkout of the user config repo on the host, where sync.sh applies the sandbox's patch. The launcher does not read it."
 add_setting LANGUAGE_VERSIONS "" 0 "build.sh: language version pins, space-separated <language>-<version>, e.g. \"go-1.25.10\". A plugin with no entry here installs the latest stable."
 add_setting CLAUDE_VERSION "" 0 "build.sh: Claude Code version baked into the image. Default: latest."
