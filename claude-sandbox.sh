@@ -15,19 +15,9 @@ case "$(uname -m)" in
   *)       PLATFORM="linux/$(uname -m)" ;;
 esac
 
-# Ensure credential files exist before bind-mounting (Docker creates a
-# directory instead of a file if the source path is absent).
-touch "$HOME/.claude.json"
+# Ensure the file exists before bind-mounting (Docker creates a directory
+# instead of a file if the source path is absent).
 touch "$HOME/.gitconfig"
-mkdir -p "$HOME/.claude"
-
-# Allow the container's claude user (UID 1000) to write to host-owned files by
-# adding the host user's GID as a supplementary group, and making the
-# credential files group-writable. The setgid bit on .claude/ ensures new
-# files created inside inherit the group rather than the container's default.
-chmod g+rw "$HOME/.claude.json" 2>/dev/null || true
-chmod g+rw "$HOME/.claude" 2>/dev/null || true
-chmod g+s "$HOME/.claude" 2>/dev/null || true
 
 PLUGINS_ARGS=()
 if [ -n "$PLUGINS" ]; then
@@ -80,15 +70,35 @@ case "$CS_ENV_FILE" in
   "$(pwd)"/*) [ -f "$CS_ENV_FILE" ] && PROTECT_ARGS+=(-v "$CS_ENV_FILE:/workspace/${CS_ENV_FILE#"$(pwd)"/}:ro") ;;
 esac
 
-# Every project is mounted at /workspace, so Claude Code derives the same
-# project key ("-workspace") for all of them and piles every project's
-# transcripts, plans and history into one bucket. Give each project its own
-# host-side bucket and bind-mount it over that key. The slug matches the one
-# Claude Code derives natively, so a project already run outside the sandbox
-# keeps its history.
+# Each project gets its own Claude state directory, mounted as ~/.claude and
+# ~/.claude.json, so a sandbox sees only its own transcripts, plans and history and
+# cannot plant settings, hooks or skills that run in Claude Code on the host. Every
+# project is mounted at /workspace, so inside the container they all share the
+# project key "-workspace"; the slug names the host-side directory.
 CS_PROJECT_SLUG=$(pwd | sed 's#[^a-zA-Z0-9-]#-#g')
-CS_PROJECT_STATE="${HOME}/.claude/projects/${CS_PROJECT_SLUG}"
-mkdir -p "${CS_PROJECT_STATE}"
+CS_PROJECT_STATE="${HOME}/.claude-sandbox/${CS_PROJECT_SLUG}"
+mkdir -p "${CS_PROJECT_STATE}/.claude/projects/-workspace"
+[ -e "${CS_PROJECT_STATE}/.claude.json" ] || echo '{"hasCompletedOnboarding":true}' > "${CS_PROJECT_STATE}/.claude.json"
+
+# The container's claude user (UID 1000) writes to host-owned files through the
+# host user's GID as a supplementary group; the setgid bit on the directories
+# makes new files inherit it.
+chmod g+rws "${CS_PROJECT_STATE}" "${CS_PROJECT_STATE}/.claude" "${CS_PROJECT_STATE}/.claude/projects" "${CS_PROJECT_STATE}/.claude/projects/-workspace" 2>/dev/null || true
+chmod g+rw "${CS_PROJECT_STATE}/.claude.json" 2>/dev/null || true
+
+# The OAuth credentials are the one thing copied in from the host's ~/.claude, and
+# back out when the sandbox refreshed or renewed them (/login): whichever copy is
+# newer wins, so a login in any sandbox carries to the others at their next start.
+HOST_CREDS="${HOME}/.claude/.credentials.json"
+SANDBOX_CREDS="${CS_PROJECT_STATE}/.claude/.credentials.json"
+if [ -f "${HOST_CREDS}" ] && { [ ! -f "${SANDBOX_CREDS}" ] || [ "${HOST_CREDS}" -nt "${SANDBOX_CREDS}" ]; }; then
+    cp -p "${HOST_CREDS}" "${SANDBOX_CREDS}"
+elif [ -f "${SANDBOX_CREDS}" ] && { [ ! -f "${HOST_CREDS}" ] || [ "${SANDBOX_CREDS}" -nt "${HOST_CREDS}" ]; }; then
+    mkdir -p "${HOME}/.claude"
+    cp -p "${SANDBOX_CREDS}" "${HOST_CREDS}"
+    chmod 600 "${HOST_CREDS}"
+fi
+chmod g+rw "${SANDBOX_CREDS}" 2>/dev/null || true
 
 # Project-scope memory lives inside the project so it is committed with the
 # code and reaches the user's other machines on a git pull.
@@ -150,9 +160,8 @@ DOCKER_ARGS=(
     "${PLUGINS_ARGS[@]}"
     -v "$(pwd):/workspace"
     "${PROTECT_ARGS[@]}"
-    -v "${HOME}/.claude.json:/home/claude/.claude.json"
-    -v "${HOME}/.claude:/home/claude/.claude"
-    -v "${CS_PROJECT_STATE}:/home/claude/.claude/projects/-workspace"
+    -v "${CS_PROJECT_STATE}/.claude.json:/home/claude/.claude.json"
+    -v "${CS_PROJECT_STATE}/.claude:/home/claude/.claude"
     -v "${CS_PROJECT_MEMORY}:/home/claude/.claude/projects/-workspace/memory"
     "${USER_CONFIG_ARGS[@]}"
     "${DOCKER_LOGIN_ARGS[@]}"

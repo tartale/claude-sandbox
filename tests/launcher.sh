@@ -65,6 +65,36 @@ reset_project() {
     find "${WORK}/home" -mindepth 1 -delete
 }
 
+# --- per-project Claude state -------------------------------------------------
+reset_project
+SLUG=$(echo "${WORK}/proj" | sed 's#[^a-zA-Z0-9-]#-#g')
+ST="${WORK}/home/.claude-sandbox/${SLUG}"
+mkdir -p "${WORK}/home/.claude/projects/other"
+echo secret > "${WORK}/home/.claude/projects/other/transcript"
+echo '{"projects":{"/other":{}}}' > "${WORK}/home/.claude.json"
+echo host-creds > "${WORK}/home/.claude/.credentials.json"
+run_launcher
+check "~/.claude is the project's own state dir" has "ARG:${ST}/.claude:/home/claude/.claude"
+check "~/.claude.json is the project's own file" has "ARG:${ST}/.claude.json:/home/claude/.claude.json"
+check "the host's ~/.claude is not mounted" lacks "ARG:${WORK}/home/.claude:/home/claude/.claude"
+check "the host's ~/.claude.json is not mounted" lacks "ARG:${WORK}/home/.claude.json:/home/claude/.claude.json"
+check "other projects' transcripts are not copied in" absent test -e "${ST}/.claude/projects/other"
+check "the host's .claude.json contents are not copied in" absent grep -q /other "${ST}/.claude.json"
+check "the credentials are seeded from the host" grep -qx host-creds "${ST}/.claude/.credentials.json"
+touch -d '2001-01-01' "${WORK}/home/.claude/.credentials.json"
+echo sandbox-creds > "${ST}/.claude/.credentials.json"
+run_launcher
+check "credentials the sandbox renewed are copied back" grep -qx sandbox-creds "${WORK}/home/.claude/.credentials.json"
+check "...to a file only the user can read" test "$(stat -c %a "${WORK}/home/.claude/.credentials.json")" = 600
+touch -d '2002-01-01' "${WORK}/home/.claude/.credentials.json"
+echo host-new > "${WORK}/home/.claude/.credentials.json"
+run_launcher
+check "a newer host login replaces the sandbox's copy" grep -qx host-new "${ST}/.claude/.credentials.json"
+rm -f "${WORK}/home/.claude/.credentials.json"
+touch -d '2003-01-01' "${ST}/.claude/.credentials.json"
+run_launcher
+check "a sandbox login is stored on a host with none" test -f "${WORK}/home/.claude/.credentials.json"
+
 # --- hardening flags --------------------------------------------------------
 reset_project
 run_launcher; rc=$?
