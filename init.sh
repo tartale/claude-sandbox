@@ -519,18 +519,26 @@ add_setting() {   # NAME VALUE ACTIVE(1|0) COMMENT
         return
     fi
     [ -s .envrc ] && echo >> .envrc
-    printf '# %s\n' "$4" >> .envrc
+    printf '%s\n' "$4" | sed 's/^/# /' >> .envrc
     if [ "$3" = 1 ]; then printf 'export %s=%s\n' "$1" "$2" >> .envrc
     else printf '# export %s=%s\n' "$1" "$2" >> .envrc; fi
     ok "added   $1"
 }
-add_setting CS_IMAGE_REPO ghcr.io/tartale/claude-sandbox 1 "Image repository, including registry host and namespace."
-add_setting CS_IMAGE_TAG "$IMAGE_TAG" 1 "Tag of this project's sandbox image."
-add_setting CS_ENV_FILE "$ENV_FILE" 1 "Env file passed into the container."
-add_setting CS_DOCKER_CONFIG "$DOCKER_DIR" 0 "Docker config directory whose config.json (registry logins) is mounted read-only into the container."
-add_setting CS_DOCKER_FLAGS "" 0 "Extra docker run flags, e.g. \"-v /host/path:/container/path\"."
-add_setting CS_PIDS_LIMIT "" 0 "Maximum number of processes in the container."
-add_setting CS_MEMORY "" 0 "Container memory limit, e.g. 8g."
+add_setting CS_IMAGE_REPO ghcr.io/tartale/claude-sandbox 1 "Image repository, including registry host and namespace. build.sh and the launcher must use the same value."
+add_setting CS_IMAGE_TAG "$IMAGE_TAG" 1 "Tag of this project's sandbox image: build.sh pushes it, run.sh and start.sh use it."
+add_setting CS_ENV_FILE "$ENV_FILE" 1 "Env file passed into the container (docker --env-file). It is read as data and never run as shell."
+add_setting CS_DOCKER_CONFIG "$DOCKER_DIR" 0 "A docker config directory; its config.json (registry logins) is mounted read-only so the container's docker CLI can use them.
+Off by default: anything in the container can read the credentials. Logins held in a credential helper (credsStore, e.g. macOS Keychain) are not available."
+add_setting CS_DOCKER_FLAGS "" 0 "Extra docker run flags, as one string, e.g. \"-v /host/path:/container/path\".
+--add-host works as in docker, including host-gateway. The container's /etc/hosts is docker's own, minus IPv6 localhost, so the host's hosts entries do not carry over.
+A --restart here replaces start.sh's --restart=unless-stopped."
+add_setting CS_PIDS_LIMIT "" 0 "Maximum number of processes in the container (docker run --pids-limit). Unset means no limit."
+add_setting CS_MEMORY "" 0 "Memory limit for the container (docker run --memory), e.g. 8g. Unset means no limit."
+add_setting CS_CONTAINER_NAME "" 0 "Container name. Default: cs-<repo-name> (run.sh appends -2, -3... while one is running); claude-sandbox.sh on its own adds a random suffix."
+add_setting CS_REF "" 0 "Launcher version for this run: a commit, tag or branch of tartale/claude-sandbox. Overrides the commit init.sh pinned in .claude/sandbox/ref."
+add_setting CS_USER_CONFIG_CHECKOUT "\$HOME/.claude-user" 0 "Your own checkout of the user config repo on the host, where sync.sh applies the sandbox's patch. The launcher does not read it."
+add_setting LANGUAGE_VERSIONS "" 0 "build.sh: language version pins, space-separated <language>-<version>, e.g. \"go-1.25.10\". A plugin with no entry here installs the latest stable."
+add_setting CLAUDE_VERSION "" 0 "build.sh: Claude Code version baked into the image. Default: latest."
 if command -v direnv >/dev/null; then note "to load them:"; cmd "direnv allow"; else note "direnv not installed; export these in your shell instead"; fi
 
 # --- fine-grained PAT for git and gh -----------------------------------------
@@ -558,7 +566,7 @@ if [ "$DO_TOKEN" = 1 ]; then
         ( umask 077
           touch "$ENV_FILE"
           tmp=$(mktemp)
-          env_comment="# Fine-grained GitHub token, limited to $REPO (git and gh in the sandbox)."
+          env_comment="# Fine-grained GitHub token, limited to $REPO (git and gh in the sandbox). Whatever it can do, the agent can do: keep it to Contents, Pull requests and Issues write, with no Administration or Workflows."
           # Drop any earlier entry and its comment, plus trailing blank lines, then append.
           grep -vxF -e "$env_comment" "$ENV_FILE" | grep -v '^CS_GITHUB_TOKEN=' \
               | awk '{ l[NR] = $0 } /./ { n = NR } END { for (i = 1; i <= n; i++) print l[i] }' > "$tmp" || true
@@ -583,6 +591,18 @@ fi
 # session simply has no user scope), so they go in commented out; the repo is
 # pre-filled with the usual name next to this project's owner.
 say "User-scope settings in $ENV_FILE"
+# A header, once, saying how the file is read.
+ENV_HEADER="Passed into the container (docker --env-file); add anything the project needs as KEY=VALUE."
+ensure_env_header() {
+    [ -f "$ENV_FILE" ] && grep -qF -- "# $ENV_HEADER" "$ENV_FILE" && return
+    ( umask 077
+      touch "$ENV_FILE"
+      tmp=$(mktemp)
+      { printf '# %s\n# Read as data, never run as shell: $VAR and ${VAR} are expanded from the host environment\n# (envsubst) and $(...) is not run. Settings for the launcher itself belong in .envrc.\n' "$ENV_HEADER"
+        [ -s "$ENV_FILE" ] && { echo; cat "$ENV_FILE"; }; } > "$tmp"
+      cat "$tmp" > "$ENV_FILE"; rm -f "$tmp" )
+}
+ensure_env_header
 add_env_setting() {   # NAME VALUE COMMENT
     if [ -f "$ENV_FILE" ] && grep -qE "^[[:space:]]*#?[[:space:]]*$1=" "$ENV_FILE"; then
         note "kept    $1"
@@ -591,11 +611,14 @@ add_env_setting() {   # NAME VALUE COMMENT
     ( umask 077
       touch "$ENV_FILE"
       [ -s "$ENV_FILE" ] && echo >> "$ENV_FILE"
-      printf '# %s\n# %s=%s\n' "$3" "$1" "$2" >> "$ENV_FILE" )
+      printf '%s\n' "$3" | sed 's/^/# /' >> "$ENV_FILE"
+      printf '# %s=%s\n' "$1" "$2" >> "$ENV_FILE" )
     ok "added   $1"
 }
-add_env_setting CS_USER_CONFIG_REPO "${REPO%%/*}/claude-user" "Private repo (owner/name) with your user-scope rules and memories, cloned read-only into the sandbox."
-add_env_setting CS_USER_CONFIG_TOKEN "" "Fine-grained token with Contents: Read-only on that one repo. Needed with CS_USER_CONFIG_REPO."
+add_env_setting CS_USER_CONFIG_REPO "${REPO%%/*}/claude-user" "Private repo (owner/name) with your user-scope rules and memories, cloned read-only into the sandbox at start.
+Optional: without it the session has no user scope. Set it together with CS_USER_CONFIG_TOKEN."
+add_env_setting CS_USER_CONFIG_TOKEN "" "Fine-grained token with Contents: Read-only on that one repo. It stays in the environment so claude-user-pull can fetch later changes; it cannot push.
+This file is readable inside the sandbox, so never give this token, or the project's, access to anything else."
 chmod 600 "$ENV_FILE"
 if git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q "$ENV_FILE"; then
     echo "$ENV_FILE" >> "$(git rev-parse --git-dir)/info/exclude"

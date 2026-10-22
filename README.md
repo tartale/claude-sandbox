@@ -1,441 +1,65 @@
 # claude-sandbox
 
-Runs [Claude Code](https://github.com/anthropics/claude-code) in a Docker container, mounting your current directory as the workspace. This gives Claude a sandboxed environment to read and modify files without touching the rest of your system.
-
-Images are tagged `ghcr.io/tartale/claude-sandbox:<tag>` (the repository is configurable with `CS_IMAGE_REPO`). CI does not build or publish them on every change; you build the image you need with [`build-image.sh`](#building-a-custom-image), or the maintainer publishes a release by pushing a `v*` tag.
-
-Each project gets its own Claude state directory, `~/.claude-sandbox/<project name>/`, mounted as `~/.claude` and `~/.claude.json` in the container. Only your OAuth credentials are copied in from the host's `~/.claude/.credentials.json`, so you stay logged in; see [Claude state](#claude-state).
-
-The container runs as a user matching your host UID and GID, so files written to the workspace are owned by you. Your shell's umask is also applied inside the container so new files get the expected permissions. Note that on macOS, Docker Desktop runs containers in a Linux VM, so the host umask has no effect — the default umask of the container will be used instead.
+Runs [Claude Code](https://github.com/anthropics/claude-code) in a Docker container with your project mounted at `/workspace`, so Claude can read and modify files without touching the rest of your system. The container runs as your UID and GID, so files it writes are yours.
 
 ## Requirements
 
 - Docker
 - An Anthropic account with Claude Code access
+- `envsubst` (macOS: `brew install gettext && brew link --force gettext`; Debian/Ubuntu: `sudo apt-get install gettext-base`), which reads `.env`
 
-## Usage
+## Initialize
 
-Set the project up once (see [Setting up a project](#setting-up-a-project)); that creates the scripts below in `.claude/sandbox/`. Then, from anywhere in the project:
+Run this once from the project's root, on your host (not inside a sandbox):
 
 ```bash
-.claude/sandbox/run.sh      # interactive: Claude Code starts in the container in your terminal
-.claude/sandbox/start.sh    # background: the container runs detached, Claude waits on its tty
-.claude/sandbox/restart.sh  # rebuild the image, stop the container, start it again in the background
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/init.sh)"
 ```
 
-Claude Code starts inside a container with the project directory as `/workspace`. The launcher uses the image `ghcr.io/tartale/claude-sandbox:<tag>` (the tag defaults to the project name; override with `CS_IMAGE_TAG` and `CS_IMAGE_REPO`). Docker pulls it if it exists in the registry; otherwise build it first with `.claude/sandbox/build.sh`. Published release images (`:latest`, language tags) reflect the last tagged release, not the latest `main`.
+It asks everything up front, then creates:
 
-Both scripts name the Claude Code session after the repo (`--name`). `run.sh` names its container `cs-<repo-name>` (`cs-<repo-name>-2`, `-3`… if one is already running) and removes a stopped one of that name first. `start.sh` names its container `cs-<repo-name>`; it prints how to reach it:
+- `.claude/sandbox/` scripts: `build.sh`, `run.sh`, `start.sh`, `restart.sh`, `sync.sh` and `plugin.sh`. They wrap the launcher and use the repo name as the image tag. A script you have not edited is updated on each run; an edited one is only asked about when the template changed (Enter shows the diff, `m` merges your edits, and a replaced file is backed up to `<name>.bak.<timestamp>`).
+- `.claude/sandbox/ref`, which pins the launcher to a commit of this repo, so a change to `main` reaches the project only when you run `init.sh` again. `CS_REF=<commit|tag|branch>` chooses what to pin.
+- `.envrc` and `.env` entries, each with a comment saying what it does (see [Configure](#configure)).
+- Optionally: a fine-grained GitHub token for `git` and `gh` in the sandbox, a package-only `ghcr.io` login, and a `main` branch ruleset (needs `gh` logged in as a repo admin).
+
+`--yes` and `--no` answer the yes/no questions for runs with nobody at the keyboard; the token and registry login need a pasted secret, so both skip them. From the one-liner, put them after the command string with a placeholder first: `/bin/bash -c "$(curl -fsSL .../init.sh)" init.sh --yes`.
+
+Commit `.claude/sandbox/` (including `ref`). Run `init.sh` again to update the scripts or move the pin.
+
+## Configure
+
+Every setting is documented where it lives:
+
+- **`.envrc`**: launcher settings (`CS_*`: image, docker flags, limits, and so on). Load it with direnv, or export the variables in your shell.
+- **`.env`**: secrets and variables passed into the container (`CS_GITHUB_TOKEN`, your user-config repo and token, anything else the project needs).
+- **`.claude/sandbox/plugin.sh`**: the tools to install in the project's image. Run `.claude/sandbox/build.sh` after changing it. See [Plugins and custom images](docs/plugins.md).
+
+## Run
+
+```bash
+.claude/sandbox/run.sh      # interactive: Claude Code runs in your terminal
+.claude/sandbox/start.sh    # background: the container runs detached
+.claude/sandbox/restart.sh  # rebuild the image, stop the container, start it again
+```
+
+Arguments go to `claude`: `.claude/sandbox/run.sh --continue`. For `start.sh` they apply to the container it starts; a container that is already running is left alone. `restart.sh` reuses the arguments of the container it replaces unless you pass new ones, and reads `.env` fresh, so it is also how a running sandbox picks up a changed token.
+
+The background container is named `cs-<repo-name>`:
 
 ```bash
 docker attach cs-<repo-name>   # detach again with ctrl-p ctrl-q
 docker stop cs-<repo-name>
 ```
 
-If the container is already running, `start.sh` says so and leaves it. Each start removes a stopped container of that name and creates a new one, so changed variables and flags always apply. `start.sh` passes `--restart=unless-stopped`, so docker brings the container back after a daemon or host restart until you `docker stop` it; add your own `--restart` to `CS_DOCKER_FLAGS` to change that. Neither script passes `--rm`, so `CS_DOCKER_FLAGS` may include `--restart`; a restarted container keeps the settings it was created with, so `docker stop` it before changing them. Override either name with `CS_CONTAINER_NAME`; `claude-sandbox.sh` on its own appends a random suffix.
+`start.sh` restarts it after a docker or host restart until you `docker stop` it (add your own `--restart` to `CS_DOCKER_FLAGS` to change that). To use another image, for example a language-pinned one: `CS_IMAGE_TAG=go-1.25.10 .claude/sandbox/run.sh`.
 
-### Passing arguments to Claude
+## More
 
-Both scripts forward their arguments to `claude`:
-
-```bash
-.claude/sandbox/run.sh --continue   # or --resume, or any other claude flag
-```
-
-For `start.sh` the arguments apply to the container it starts; a container that is already running is left as it is.
-
-`restart.sh` runs `build.sh`, stops the container and runs `start.sh`. Without arguments it reuses the `claude` arguments of the container it replaces; arguments you pass replace them. Environment variables and `.env` are read fresh, so this is how a running sandbox picks up a changed `CS_USER_CONFIG_TOKEN`.
-
-### Using a specific image tag
-
-To use a language-pinned image:
-
-```bash
-CS_IMAGE_TAG=go-1.25.10 .claude/sandbox/run.sh
-```
-
-### Without a project setup
-
-`claude-sandbox.sh` is what the stubs wrap; it can be run directly from any directory:
-
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)"
-```
-
-## Setting up a project
-
-Run this from a project's root, on your host (not inside a sandbox), to set the project up for the sandbox:
-
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/init.sh)"
-```
-
-It:
-
-- creates `.claude/sandbox/` stubs (a stub you have not edited since `init.sh` last wrote it is updated to the current template; an edited one is asked about only when the template has changed since your last run, so a file you maintain such as `plugin.sh` does not prompt every time; Enter shows the diff first; `m` three-way merges your edits into the new template using the template kept in `.claude/sandbox/.init-base/`, leaving conflict markers where they overlap; a file that is replaced is first copied to `<name>.bak.<timestamp>`, which is git-excluded locally; `.claude/sandbox/.init-hashes` records what was last written and the template seen): `plugin.sh` is where the project's plugins and packages go; `build.sh` builds the project's image from it; `run.sh` starts the sandbox interactively; `start.sh` starts it in the background; `restart.sh` rebuilds the image and restarts that container; `sync.sh` applies the patch `claude-user-sync` writes (see [User scope](#user-scope)). They wrap the `build-image.sh` and `claude-sandbox.sh` one-liners, and use the repo name as the image tag.
-- checks that `envsubst` is installed (needed to read `.env`) and stops with the install command if it is missing, before asking anything; `plugin.sh` lists every built-in plugin, commented out.
-- pins the launcher: it resolves `CS_REF` (a commit, tag or branch of `tartale/claude-sandbox`, default `main`) to a commit and writes it to `.claude/sandbox/ref`, which the stubs use to fetch `build-image.sh` and `claude-sandbox.sh`. A change to `main` does not reach this machine until you run `init.sh` again, which reports the old and new commit. `CS_REF=<ref>` in the environment overrides the pin for one run; `ref` is mounted read-only in the sandbox. If the ref can't be resolved, nothing is written and the stubs fetch `main`.
-- adds the `CS_` launcher settings (`CS_IMAGE_REPO`, `CS_IMAGE_TAG`, `CS_ENV_FILE`, and commented-out `CS_DOCKER_CONFIG`, `CS_DOCKER_FLAGS`, `CS_PIDS_LIMIT`, `CS_MEMORY`) with their defaults to `.envrc` in the project root; names already there are left alone.
-- adds `CS_USER_CONFIG_REPO` (pre-filled as `<project owner>/claude-user`) and `CS_USER_CONFIG_TOKEN` to `.env`, commented out and with a comment each; names already there are left alone (see [User scope](#user-scope));
-- opens GitHub's token page with a single-repo fine-grained token pre-filled (Contents, Pull requests and Issues read/write), validates the token you paste (no Administration, can push, no other private repos), and writes `CS_GITHUB_TOKEN` to `.env` at mode 600, excluded from git locally.
-
-All questions (token, registry login, ruleset) are asked up front, before anything is written. The optional ones are:
-
-- store a `write:packages` login for `ghcr.io` in a dedicated docker config (`~/.docker-sandbox`, override with `CS_SANDBOX_DOCKER_CONFIG`), so `CS_DOCKER_CONFIG` can share only that login and not your other registry logins. It prints the launch line and the steps to give the repo access to the package after the first push.
-- create a `main` branch ruleset (PR required, no force-push or deletion, no bypass; it requires no approvals and no status checks, see [Merging and CI](#merging-and-ci)). Needs `gh` logged in as a repo admin. The question is always asked; answering yes without `gh` installed stops the script.
-
-`--yes` and `--no` answer the yes/no questions themselves, for runs with nobody at the keyboard. From the one-liner, put them after the command string, with a placeholder name first (it becomes `$0`): `/bin/bash -c "$(curl -fsSL .../init.sh)" init.sh --yes`. Piping into `bash -s` also passes them but takes over stdin, so prompts would not work. `--no` keeps every edited stub and creates nothing on GitHub. `--yes` replaces an edited stub whose template changed (after the usual backup) and creates the ruleset when it can (`gh` installed, you are an admin, none exists yet); the token and registry login need a secret pasted in, so `--yes` skips them. Both stop if the repo cannot be read from `origin`.
-
-It reads the repo from the `origin` remote (and asks if there is none). `CS_ENV_FILE` picks a different env file for the token.
-
-GitHub cannot create tokens through its API, so the token itself is created in the browser; the script checks it afterwards. It can verify that the token has push access and no Administration permission, but not that Workflows is off, so confirm that on the token page.
-
-## Building a custom image
-
-Put the project's plugins in `.claude/sandbox/plugin.sh`, then run `.claude/sandbox/build.sh`. It builds the project image and pushes it to `CS_IMAGE_REPO:CS_IMAGE_TAG`; `run.sh` and `start.sh` use the same tag. The stub wraps the `build-image.sh` one-liner, which also works on its own, with no repo checkout:
-
-```bash
-CS_IMAGE_TAG=my-sandbox /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
-```
-
-Then launch it by setting `CS_IMAGE_TAG` to match:
-
-```bash
-CS_IMAGE_TAG=my-sandbox .claude/sandbox/run.sh
-```
-
-The examples below call `build-image.sh` directly to show its environment variables.
-
-### Build environment variables
-
-| Variable | Description |
-|---|---|
-| `CS_IMAGE_REPO` | Image repository to build and push to, e.g. `registry.example.com/team/sandbox` (default: `ghcr.io/tartale/claude-sandbox`) |
-| `CS_IMAGE_TAG` | Tag for the built image (default: `custom`) |
-| `PLUGINS` | Built-in plugin name, local path, or URL (see [Plugins](#plugins) below) |
-| `LANGUAGE_VERSIONS` | Space-separated `<language>-<version>` pins (e.g. `"go-1.25.10"`) |
-| `CLAUDE_VERSION` | Claude Code version to bake in (default: latest) |
-
-```bash
-# Built-in language plugin
-PLUGINS=python3 CS_IMAGE_TAG=my-python /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
-
-# Built-in plugin with version pin
-PLUGINS=go LANGUAGE_VERSIONS="go-1.24.0" CS_IMAGE_TAG=go-1.24 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
-
-# Local custom plugin script
-PLUGINS=./my-tools.sh CS_IMAGE_TAG=my-tools /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
-
-# Remote custom plugin script
-PLUGINS=https://example.com/my-tools.sh CS_IMAGE_TAG=my-tools /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
-```
-
-## Plugins
-
-Plugins are shell scripts that install additional tools into the sandbox. The `plugins/` directory contains ready-made language packs:
-
-| Plugin | Installs | Version format | Example |
-|---|---|---|---|
-| `plugins/languages/cpp.sh` | `build-essential`, `clang`, `cmake`, `gdb`, `ninja`, `valgrind` | `cpp-<clang-major>` | `cpp-17` |
-| `plugins/languages/go.sh` | Go toolchain | `go-<version>` | `go-1.25.10` |
-| `plugins/languages/java.sh` | OpenJDK, Maven | `java-<major>` | `java-21` |
-| `plugins/languages/python2.sh` | `pip`, `venv`, `pipx`, `uv` | `python-<version>` | `python-3.13.2` |
-| `plugins/languages/python3.sh` | `pip`, `venv`, `pipx`, `uv` (uses `python3-` version prefix) | `python3-<version>` | `python3-3.13.2` |
-| `plugins/languages/ruby.sh` | Ruby, Bundler | `ruby-<version>` | `ruby-3.3.0` |
-| `plugins/languages/rust.sh` | Rust via rustup (`cargo`, `rustc`, `rustfmt`, `clippy`) | `rust-<version>` | `rust-1.78.0` |
-| `plugins/languages/typescript.sh` | TypeScript, `ts-node`, `tsx`, `@types/node` | `typescript-<version>` | `typescript-5.4.0` |
-
-All language plugins default to the latest stable version. See [Pinning a language version](#pinning-a-language-version) for details.
-
-The `plugins/tools/` directory contains ready-made tool packs:
-
-| Plugin | Installs |
-|---|---|
-| `plugins/tools/docker.sh` | Docker CLI (client only), Buildx, and Compose plugins |
-| `plugins/tools/playwright.sh` | Playwright CLI/test runner plus Chromium, Firefox, and their system libraries |
-
-Built-in plugins are resolved by name regardless of directory, so `PLUGINS=docker` and `PLUGINS=go` both work. The Docker plugin installs only the client; bind-mount the host's Docker socket so the CLI can reach the host daemon:
-
-```bash
-CS_DOCKER_FLAGS="-v /var/run/docker.sock:/var/run/docker.sock" ./claude-sandbox.sh
-```
-
-Mounting the socket gives the sandbox root on the host (it can start privileged containers), so the launcher prints a warning when it sees one.
-
-This is an accepted risk, not a safeguarded feature: nothing filters what the agent asks the daemon to do. Mount the socket only in a sandbox whose job needs it (for example an SRE sandbox that rebuilds and restarts the service it owns), never in a general development sandbox, and keep that sandbox's project to one you trust. The launch scripts in `.claude/sandbox` are mounted read-only so the agent cannot add the mount to a launch that did not have it.
-
-The Playwright plugin bakes in the browsers *and* the system libraries they need — the part a plain
-`npm install playwright` inside a running sandbox can't do, since installing those libraries needs
-root. Browsers land in `/ms-playwright` with `PLAYWRIGHT_BROWSERS_PATH` exported for every shell, so
-they resolve whatever uid the container runs as. They are headless natively, so no Xvfb wrapper is
-needed. Browser revisions are tied to the Playwright version, so pin it to match the project's own
-dependency:
-
-```bash
-PLUGINS=playwright LANGUAGE_VERSIONS="playwright-1.55.0" CS_IMAGE_TAG=my-playwright ./build-image.sh
-```
-
-### Using a single plugin
-
-Pass a built-in name or path via `PLUGINS`:
-
-```bash
-# no repo checkout needed
-PLUGINS=go CS_IMAGE_TAG=my-go /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
-
-# or with a local repo checkout
-PLUGINS=plugins/languages/go.sh CS_IMAGE_TAG=my-tag make image
-```
-
-### Pinning a language version
-
-Pass `LANGUAGE_VERSIONS` as a space-separated list of `<language>-<version>` entries. Each plugin extracts only its own entry:
-
-```bash
-# no repo checkout needed
-PLUGINS=go LANGUAGE_VERSIONS="go-1.25.10" CS_IMAGE_TAG=go-1.25.10 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
-
-# with a local repo checkout
-PLUGINS=plugins/languages/go.sh CS_IMAGE_TAG=go-1.25.10 LANGUAGE_VERSIONS="go-1.25.10" make image
-```
-
-When a plugin's entry is absent from `LANGUAGE_VERSIONS`, it installs the latest stable version.
-
-Notes:
-- **cpp**: version refers to the clang major version installed from the [LLVM apt repo](https://apt.llvm.org)
-- **java**: only major versions available in Debian apt are supported (e.g. `11`, `17`, `21`)
-- **ruby**: compiles from source via `ruby-build` — expect longer build times
-
-### Using multiple plugins
-
-Point `PLUGINS` at a local directory of `.sh` scripts to run all of them, in alphabetical order:
-
-```bash
-# no repo checkout needed
-PLUGINS=./my-plugins/ CS_IMAGE_TAG=my-tag /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
-
-# with a local repo checkout
-PLUGINS=plugins/languages CS_IMAGE_TAG=my-tag make image
-```
-
-Prefix filenames with numbers to control order when it matters (`01-go.sh`, `02-rust.sh`, …).
-
-### Writing your own plugin
-
-A plugin is any executable shell script. Create one anywhere and point `PLUGINS` at it:
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-apt-get update && apt-get install -y my-tool && rm -rf /var/lib/apt/lists/*
-```
-
-The script runs as root during `docker build`, so standard `apt-get` installs work without `sudo`.
-
-### Composing built-in plugins
-
-`PLUGINS_DIR` is pre-populated with the path to the root of the `plugins/` directory. A custom plugin can use it to source built-in language plugins by path.
-
-**Example — a Go + React stack:**
-
-```bash
-# go-react.sh
-#!/usr/bin/env bash
-set -euo pipefail
-
-bash "$PLUGINS_DIR/languages/go.sh"
-bash "$PLUGINS_DIR/languages/react.sh"
-```
-
-```bash
-# no repo checkout needed
-PLUGINS=./go-react.sh CS_IMAGE_TAG=go-react /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
-
-# with a local repo checkout
-PLUGINS=plugins/languages/go-react.sh CS_IMAGE_TAG=go-react make image
-```
-
-Each sourced plugin respects `LANGUAGE_VERSIONS`, so you can still pin versions:
-
-```bash
-PLUGINS=./go-react.sh CS_IMAGE_TAG=go-react \
-  LANGUAGE_VERSIONS="go-1.25.10" /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
-```
-
-### Runtime plugins
-
-`PLUGINS` also works at runtime with `claude-sandbox.sh`. The script (or directory) is bind-mounted into the container and executed before Claude starts, letting you run setup steps without rebuilding the image:
-
-```bash
-PLUGINS=plugins/languages/python2.sh ./claude-sandbox.sh
-```
-
-## Rules and memories
-
-Claude accumulates two very different kinds of knowledge, and they want to live in different places:
-
-- **Project scope** — how *this* codebase is built, tested and deployed; its gotchas and ongoing work. This should travel with the repo, so a teammate (or you on another machine) gets it from a `git pull`.
-- **User scope** — who you are and how you like to work. This should follow *you* between projects and between machines, and has no business in any one project's history.
-
-Left alone, the sandbox blurs both. Every project is mounted at `/workspace`, so Claude Code derives the same project key for all of them and piles every project's memories, transcripts and history into a single `~/.claude/projects/-workspace/` bucket on the host. The sandbox splits them instead.
-
-### Claude state
-
-The launcher does not mount your host `~/.claude` or `~/.claude.json`. A sandbox that could would see every other project's transcripts and plans, and could plant settings, hooks or skills there that run the next time you use Claude Code on the host. Instead each project has `~/.claude-sandbox/<project name>/` with its own `.claude/` and `.claude.json`.
-
-Your credentials are the only thing carried between them, and the launcher does it at each start: it copies `~/.claude/.credentials.json` into the project's directory, and copies the project's file back to the host when the sandbox renewed it (the newer copy wins). The directory is named after the project's folder, not its full path, so moving a project keeps its state; two projects with the same folder name share one. A `/login` inside any sandbox therefore reaches the others when they next start. Settings, skills, commands and plugins in your host `~/.claude` are not visible in the sandbox. On macOS, where Claude Code keeps credentials in the Keychain, log in once inside the sandbox; the credentials are then kept in the file above.
-
-### Project scope
-
-Each project gets its own state directory on the host, keyed by the project's directory name (see [Claude state](#claude-state)), and its memory directory is bind-mounted from the project itself:
-
-```
-<project>/CLAUDE.md                    project rules            (commit)
-<project>/.claude/memory/              project memories         (commit)
-<project>/.claude/settings.json        shared project settings  (commit)
-<project>/.claude/settings.local.json  machine-local overrides  (gitignore)
-```
-
-`.claude/memory/` is the directory Claude writes memories to, so memories recorded during a session land in the project and get committed alongside the code they describe. Add this to the project's `.gitignore`:
-
-```gitignore
-.claude/settings.local.json
-```
-
-Nothing else under `.claude/` should be ignored — that's the point.
-
-### User scope
-
-User-scope rules and memories live in a small private git repo (for example `you/claude-user`) that every sandbox clones read-only at start. Give the sandbox the repo and a token that can only read it; `init.sh` adds both to `.env`, commented out, with the repo pre-filled as `<project owner>/claude-user`:
-
-```bash
-# .env
-CS_USER_CONFIG_REPO=you/claude-user
-CS_USER_CONFIG_TOKEN=github_pat_...   # fine-grained, only that repo, Contents: Read-only
-```
-
-Both are optional: without them the session has no user scope and says so. Set the two together; a repo without a token is skipped with a warning. They can equally be exported in your shell instead of `.env`. The sandbox can read `.env`, so the token is readable inside it; it can only read that repo.
-
-The repo is cloned to `/home/claude/.claude-user` and scaffolded on first use:
-
-```
-CLAUDE.md          your rules, loaded into every session on every project
-memory/MEMORY.md   index of your user-scope memories
-memory/*.md        the memories themselves
-```
-
-At container start the sandbox generates `~/.claude/CLAUDE.md` from it: the scope routing rules, your `CLAUDE.md`, and your memory index, inlined so Claude always has them. That file is regenerated on every start; edit the repo's `CLAUDE.md` instead.
-
-The token stays in the environment, but it can only read, so the session can fetch later changes and can never push them. The clone vanishes with the container. `claude-user-sync` commits locally and writes `.tmp/claude-user.patch` in the project; review it and apply it from your own checkout with the stub `init.sh` generated:
-
-```bash
-.claude/sandbox/sync.sh
-```
-
-`sync.sh show` pages through the patch and `sync.sh status` says whether one is waiting. `apply` (the default) shows what the patch changes (`d` shows the colored diff), asks before applying, then runs `git am` in the checkout named by `CS_USER_CONFIG_CHECKOUT` (default `~/.claude-user`) and pushes. The script is mounted read-only in the sandbox like the other launch scripts, so a session cannot edit it.
-
-#### Keeping running sessions current
-
-Changes you push to the user config repo reach a running session by themselves. The container passes Claude Code a `UserPromptSubmit` hook (`--settings`, so your own settings are untouched) that runs `claude-user-pull --hook` before each prompt. At most every five minutes it fetches the repo; if something new landed, it brings the clone up to date and puts "user preferences changed" plus the diff into the agent's context. You do not need to tell each agent to re-read. If the clone has local changes that are not applied yet, it reports the change without pulling and tells the agent to run `claude-user-sync` first. Run `claude-user-pull` by hand to check on demand.
-
-Don't grant the project's sandbox token access to the user config repo, or the protection is moot. Set these two variables in your shell, not in `.env`.
-
-### Which scope does something belong in?
-
-Ask whether it would still be true on a different project. "Run the full test suite before pushing" is user scope; "run `./actual test` before pushing" is project scope. Claude is given this rule in the generated `CLAUDE.md`, but it's worth knowing when you're filing things by hand.
-
-### Migrating an existing setup
-
-If you've been running the sandbox already, everything from every project is in `~/.claude/projects/-workspace/` on the host. Nothing is deleted — that bucket is simply no longer used, since each project now mounts its own. To carry old memories forward, sort them by hand:
-
-```bash
-ls ~/.claude/projects/-workspace/memory/
-# project facts  -> <project>/.claude/memory/   then commit
-# personal facts -> ~/.claude-user/memory/      then claude-user-sync
-```
-
-Remember to move the matching lines in `MEMORY.md` too, since that index is what Claude reads first.
-
-If you previously hand-symlinked the memory directory into a project, drop the symlink — the bind mount replaces it:
-
-```bash
-[ -L ~/.claude/projects/-workspace/memory ] && rm ~/.claude/projects/-workspace/memory
-```
-
-## Tests
-
-`make test` runs the bash tests in `tests/`. `launcher.sh` exercises the launcher with a stubbed `docker` (no daemon needed); `init.sh` runs `init.sh` in a scratch git project on a pty, with no network, to check the stubs it generates and how it treats files you edited. The expansion tests need `envsubst` and are skipped without it. CI runs them on every pull request.
-
-## Environment variables
-
-| Variable | Description |
-|---|---|
-| `CS_IMAGE_REPO` | Image repository, including registry host and namespace (default: `ghcr.io/tartale/claude-sandbox`). Set the same value for `build-image.sh` and the launcher. |
-| `CS_IMAGE_TAG` | Tag of the image to use (default: `local`) |
-| `CS_DOCKER_FLAGS` | Extra arguments for `docker run`, as one string (e.g. `"-v /var/run/docker.sock:/var/run/docker.sock"`). `--add-host` works as in docker, including `host-gateway`; the container's `/etc/hosts` is docker's own, minus IPv6 localhost, so the host's hosts entries do not carry over. |
-| `CS_CONTAINER_NAME` | Container name (default: `claude-sandbox-<dir>-<random>`; `start.sh` sets `cs-<repo-name>`) |
-| `CS_ENV_FILE` | Path to an env file to pass into the container (default: `.env`) |
-| `LANGUAGE_VERSIONS` | Space-separated list of language versions in `<language>-<version>` format (e.g. `"go-1.25.10"`). Each plugin extracts its own entry; omitted plugins default to latest stable. |
-| `PLUGINS` | Path to a plugin script or directory of plugin scripts to install |
-| `CS_USER_CONFIG_REPO` | `owner/name` of your user config repo, cloned read-only into the container at start. Requires `CS_USER_CONFIG_TOKEN`. May be set in `.env`. See [User scope](#user-scope). |
-| `CS_USER_CONFIG_TOKEN` | Fine-grained token with read-only Contents access to that one repo. May be set in `.env`. Stays in the environment so `claude-user-pull` can fetch later changes; it cannot push. |
-| `CS_USER_CONFIG_CHECKOUT` | Your own checkout of the user config repo on the host, where `sync.sh` applies the sandbox's patch (default `~/.claude-user`). Not read by the launcher. |
-| `CS_DOCKER_CONFIG` | A docker config directory (for example `~/.docker-sandbox`); its `config.json` is mounted read-only so the container's docker CLI can use your registry logins. Off by default; the credentials are readable by anything in the container. Logins held in a credential helper (`credsStore`, e.g. macOS Keychain) are not available in the container. |
-| `CS_PIDS_LIMIT` | Maximum number of processes in the container (`docker run --pids-limit`). Unset means no limit. |
-| `CS_MEMORY` | Memory limit for the container (`docker run --memory`, e.g. `8g`). Unset means no limit. |
-
-### GitHub token
-
-Set `CS_GITHUB_TOKEN` (e.g. in `.env`) to let `git` and `gh` authenticate inside the container. Whatever the token can do, the agent can do, so use a [fine-grained personal access token](https://github.com/settings/personal-access-tokens) limited to the one repository you are working on, with only *Contents* and *Pull requests* write access, and no administration or workflow permissions.
-
-### Passing environment variables into the container
-
-If a `.env` file exists in the current directory, it is passed to the container via `--env-file`. Use this to inject secrets or project-specific configuration:
-
-```bash
-# .env
-GITHUB_TOKEN=ghp_...
-MY_API_KEY=...
-```
-
-The `.env` file follows standard `KEY=VALUE` format. Variables not listed in the file are not passed to the container.
-
-The file is read as data and never run as shell. `$VAR` and `${VAR}` are expanded from your host environment using `envsubst` (macOS: `brew install gettext && brew link --force gettext`; Debian/Ubuntu: `sudo apt-get install gettext-base`), and the result is passed to `docker run --env-file`. Only variables your host exports are expanded, so a literal `$` in a secret is left alone. Command substitution (`$(...)`, backticks) is not run; the launcher warns and passes the text through unchanged. Launcher settings (`CS_*`) belong in your shell environment, not in `.env`.
-
-The env file, `.envrc`, `.git/config`, `.git/hooks` and `.claude/sandbox/{build,restart,run,start,sync}.sh` are mounted read-only inside the container, because they run on the host later (when you launch, `cd` with direnv, or commit) and an agent must not be able to plant code in them. Edit them from the host. `.claude/sandbox/plugin.sh` stays writable so the agent can maintain the project's dependencies; it only runs inside the image build, but read its `git diff` before running `build.sh`. `.git/config` is read-only too, so a session cannot add an alias, `core.fsmonitor` or `core.sshCommand` that your host git would run; inside the container git is told not to record upstream tracking (`branch.autoSetupMerge=false`), so `git push -u` still pushes but prints an error about the config it cannot write, and `git branch --set-upstream-to`, `git remote add` and `git config` fail. Do those on the host; git replaces the file on write, so a running container keeps the old `.git/config` until it restarts. Other files that run on the host later (`Makefile` targets, test and package scripts) stay writable, so read `git diff` before running host-side tooling on a checkout an agent has touched.
-
-### Merging and CI
-
-Nothing technical stops a session from merging its own pull request. The sandbox token has Contents and Pull requests write access and acts as your account, so GitHub will not let you approve what it opens, and the ruleset `init.sh` creates requires a PR but no approvals and no status checks. "Do not merge without approval" is a rule you give the agent, not one GitHub enforces. A real gate needs a second identity that does the merging or approving (a bot account with its own token, or a paid plan for reviews on a private repo). Short of that:
-
-- add required status checks (for example `test`) to the ruleset once CI exists, so red code cannot merge;
-- CI runs what the PR contains, including `plugin.sh`, the Dockerfile and the workflows, so keep registry and deploy secrets out of workflows that run on pull requests, and build and push images only from `main` or tags (this repo's `release.yml` runs on tags only);
-- give PR workflows read-only `GITHUB_TOKEN` permissions (`permissions: contents: read`); the sandbox token has no `workflow` scope, so a session cannot push workflow files, and you add this yourself;
-- read the diff of `plugin.sh`, the Dockerfile, `.github/` and `.claude/sandbox/` before merging.
-
-### Network egress
-
-The container can reach any host, including the other machines on your LAN. Anything the session can read (the project token, the user-config token, the Claude login) can therefore be sent out, so limit what the container can reach from outside it; the sandbox has no `NET_ADMIN` and cannot change its own rules. None of this is set up by the launcher, and the commands below are starting points that have not been run against your network.
-
-- **Give the sandboxes their own network** so rules can name them: `docker network create --subnet 172.30.0.0/24 claude-sandbox`, then launch with `CS_DOCKER_FLAGS="--network claude-sandbox"`.
-- **Keep the LAN off limits (Linux host or NAS).** Rules in the `DOCKER-USER` chain run before Docker's own. Allow your DNS resolver first, then drop the private ranges, so the session reaches the internet but not your router, NAS admin page or other machines:
-
-  ```bash
-  iptables -I DOCKER-USER -s 172.30.0.0/24 -d 10.0.0.0/8 -j DROP
-  iptables -I DOCKER-USER -s 172.30.0.0/24 -d 172.16.0.0/12 -j DROP
-  iptables -I DOCKER-USER -s 172.30.0.0/24 -d 192.168.0.0/16 -j DROP
-  iptables -I DOCKER-USER -s 172.30.0.0/24 -d <resolver-ip> -p udp --dport 53 -j ACCEPT
-  ```
-
-  The last rule is inserted last, so it is evaluated first. Docker Desktop (macOS, Windows) has no host `iptables` to edit; use the router instead.
-- **Allow only the hosts you need, at the router.** Container traffic leaves the host under the host's address, so a router rule cannot tell it from the host's own. Give the sandbox its own LAN address with a `macvlan` or `ipvlan` network (`docker network create -d macvlan --subnet ... --gateway ... -o parent=eth0 claude-sandbox`; a macvlan container and its host cannot reach each other without extra setup). A router or firewall that filters by hostname (OPNsense, pfSense or OpenWrt aliases, or per-client DNS filtering in Pi-hole or AdGuard Home) can then allow `github.com`, `api.github.com`, `api.anthropic.com` and your package registries and block the rest.
-- **A filtering resolver** (`CS_DOCKER_FLAGS="--dns <ip>"`) is the cheapest step and the weakest: a session that connects by IP address skips it.
-
-To use a different file name, set `CS_ENV_FILE`:
-
-```bash
-CS_ENV_FILE=.env.sandbox .claude/sandbox/run.sh
-```
+- [Rules, memories and Claude state](docs/user-scope.md): project and user scope, and what each sandbox sees of `~/.claude`
+- [Plugins and custom images](docs/plugins.md)
+- [Security](docs/security.md): read-only files, tokens, merging and CI, network egress
+- [Development](docs/development.md)
 
 ## License
 
