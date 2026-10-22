@@ -86,10 +86,12 @@ check "CS_IMAGE_REPO and CS_IMAGE_TAG pick the image" has "ARG:example.com/me/im
 reset_project
 run_launcher
 check "no protect mounts when the files are absent" lacks "ARG:${WORK}/proj/.envrc:/workspace/.envrc:ro"
+check "...nor for .git/config" lacks "ARG:${WORK}/proj/.git/config:/workspace/.git/config:ro"
 
 mkdir -p "${WORK}/proj/.git/hooks"
-touch "${WORK}/proj/.envrc" "${WORK}/proj/.env"
+touch "${WORK}/proj/.envrc" "${WORK}/proj/.env" "${WORK}/proj/.git/config"
 run_launcher
+check ".git/config is mounted read-only" has "ARG:${WORK}/proj/.git/config:/workspace/.git/config:ro"
 check ".git/hooks is mounted read-only" has "ARG:${WORK}/proj/.git/hooks:/workspace/.git/hooks:ro"
 check ".envrc is mounted read-only" has "ARG:${WORK}/proj/.envrc:/workspace/.envrc:ro"
 check ".env is mounted read-only" has "ARG:${WORK}/proj/.env:/workspace/.env:ro"
