@@ -19,7 +19,7 @@ Run this once from the project's root, on your host (not inside a sandbox):
 It asks everything up front, then creates:
 
 - `.claude/sandbox/` scripts: `build.sh`, `run.sh`, `start.sh`, `restart.sh`, `sync.sh` and `plugin.sh`. They wrap the launcher and use the repo name as the image tag. A script you have not edited is updated on each run; an edited one is only asked about when the template changed (Enter shows the diff, `m` merges your edits, and a replaced file is backed up to `<name>.bak.<timestamp>`).
-- `.claude/sandbox/ref`, which pins the launcher to a commit of this repo, so a change to `main` reaches the project only when you run `init.sh` again. `CS_REF=<commit|tag|branch>` chooses what to pin.
+- `.claude/sandbox/ref`, which pins the launcher to a commit of this repo, so a change to `main` reaches the project only when you run `init.sh` again. `CS_REF=<commit|tag|branch>` chooses what to pin; `CS_REF=latest` pins nothing and removes an existing pin, so the project follows `main`. Put `export CS_REF=latest` in `.envrc` to keep that across `init.sh` runs.
 - `.envrc` and `.env` entries, each with a comment saying what it does (see [Configure](#configure)).
 - Optionally: a fine-grained GitHub token for `git` and `gh` in the sandbox, a package-only `ghcr.io` login, and a `main` branch ruleset (needs `gh` logged in as a repo admin).
 
