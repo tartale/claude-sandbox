@@ -397,6 +397,24 @@ The file is read as data and never run as shell. `$VAR` and `${VAR}` are expande
 
 The env file, `.envrc`, `.git/hooks` and `.claude/sandbox/{build,run,start,sync}.sh` are mounted read-only inside the container, because they run on the host later (when you launch, `cd` with direnv, or commit) and an agent must not be able to plant code in them. Edit them from the host. `.claude/sandbox/plugin.sh` stays writable so the agent can maintain the project's dependencies; it only runs inside the image build, but read its `git diff` before running `build.sh`. `.git/config` stays writable, so review `git diff` and `.git/config` before running host-side tooling on a checkout an agent has touched.
 
+### Network egress
+
+The container can reach any host, including the other machines on your LAN. Anything the session can read (the project token, the user-config token, the Claude login) can therefore be sent out, so limit what the container can reach from outside it; the sandbox has no `NET_ADMIN` and cannot change its own rules. None of this is set up by the launcher, and the commands below are starting points that have not been run against your network.
+
+- **Give the sandboxes their own network** so rules can name them: `docker network create --subnet 172.30.0.0/24 claude-sandbox`, then launch with `CS_DOCKER_FLAGS="--network claude-sandbox"`.
+- **Keep the LAN off limits (Linux host or NAS).** Rules in the `DOCKER-USER` chain run before Docker's own. Allow your DNS resolver first, then drop the private ranges, so the session reaches the internet but not your router, NAS admin page or other machines:
+
+  ```bash
+  iptables -I DOCKER-USER -s 172.30.0.0/24 -d 10.0.0.0/8 -j DROP
+  iptables -I DOCKER-USER -s 172.30.0.0/24 -d 172.16.0.0/12 -j DROP
+  iptables -I DOCKER-USER -s 172.30.0.0/24 -d 192.168.0.0/16 -j DROP
+  iptables -I DOCKER-USER -s 172.30.0.0/24 -d <resolver-ip> -p udp --dport 53 -j ACCEPT
+  ```
+
+  The last rule is inserted last, so it is evaluated first. Docker Desktop (macOS, Windows) has no host `iptables` to edit; use the router instead.
+- **Allow only the hosts you need, at the router.** Container traffic leaves the host under the host's address, so a router rule cannot tell it from the host's own. Give the sandbox its own LAN address with a `macvlan` or `ipvlan` network (`docker network create -d macvlan --subnet ... --gateway ... -o parent=eth0 claude-sandbox`; a macvlan container and its host cannot reach each other without extra setup). A router or firewall that filters by hostname (OPNsense, pfSense or OpenWrt aliases, or per-client DNS filtering in Pi-hole or AdGuard Home) can then allow `github.com`, `api.github.com`, `api.anthropic.com` and your package registries and block the rest.
+- **A filtering resolver** (`CS_DOCKER_FLAGS="--dns <ip>"`) is the cheapest step and the weakest: a session that connects by IP address skips it.
+
 To use a different file name, set `CS_ENV_FILE`:
 
 ```bash
