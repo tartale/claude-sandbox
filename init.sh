@@ -605,6 +605,7 @@ if [ "$DO_RULESET" = 1 ]; then
 JSON
         ); then
             ok "ruleset created (add required status checks once CI exists)"
+            note "it requires a PR but no approval: the sandbox token can merge its own PRs"
         else
             warn "GitHub refused to create the ruleset; everything else is done"
             note "$(printf '%s' "$RULESET_ERR" | head -n 2)"
