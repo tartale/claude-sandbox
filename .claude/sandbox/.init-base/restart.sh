@@ -8,8 +8,10 @@ THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAME="${CS_CONTAINER_NAME:-cs-claude-sandbox}"
 
 if [ "$#" -eq 0 ]; then
-    # start.sh adds --name itself, so the recovered one is dropped.
+    # start.sh adds --name itself, so the recovered one is dropped. docker inspect ends
+    # its output with a newline of its own; the empty arguments that makes are skipped.
     while IFS= read -r arg; do
+        [ -n "$arg" ] || continue
         if [ "${skip:-false}" = true ]; then skip=false; continue; fi
         if [ "$arg" = --name ]; then skip=true; continue; fi
         set -- "$@" "$arg"

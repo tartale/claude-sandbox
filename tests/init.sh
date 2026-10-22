@@ -173,7 +173,7 @@ mkdir -p "${RS}/.claude/sandbox" "${RS}/bin"
 cp "${SB}/restart.sh" "${RS}/.claude/sandbox/restart.sh"
 printf '#!/bin/sh\necho "build" >> "%s/log"\n' "${RS}" > "${RS}/.claude/sandbox/build.sh"
 printf '#!/bin/sh\necho "start $*" >> "%s/log"\n' "${RS}" > "${RS}/.claude/sandbox/start.sh"
-printf '#!/bin/sh\ncase "$1" in\n  inspect) printf "%%s\\n" --name demo-app --continue "two words" ;;\n  stop) echo "stop $2" >> "%s/log" ;;\nesac\n' "${RS}" > "${RS}/bin/docker"
+printf '#!/bin/sh\ncase "$1" in\n  inspect) printf "%%s\\n" --name demo-app --continue "two words"; echo ;;\n  stop) echo "stop $2" >> "%s/log" ;;\nesac\n' "${RS}" > "${RS}/bin/docker"
 chmod +x "${RS}"/.claude/sandbox/*.sh "${RS}/bin/docker"
 restart() { OUT=$(env -i PATH="${RS}/bin:${BIN}" bash "${RS}/.claude/sandbox/restart.sh" "$@" 2>&1); }
 : > "${RS}/log"; restart
