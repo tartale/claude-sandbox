@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO="tartale/claude-sandbox"
-BRANCH="main"
+REF="${CS_REF:-main}"   # a commit, tag or branch of ${REPO}
 
 CS_IMAGE_TAG="${CS_IMAGE_TAG:-custom}"
 CS_IMAGE_REPO="${CS_IMAGE_REPO:-ghcr.io/tartale/claude-sandbox}"
@@ -14,10 +14,10 @@ CLAUDE_VERSION="${CLAUDE_VERSION:-$(npm view @anthropic-ai/claude-code version 2
 BUILD_DIR=$(mktemp -d)
 trap 'rm -rf "$BUILD_DIR"' EXIT
 
-echo "Fetching build files from ${REPO}@${BRANCH}..."
+echo "Fetching build files from ${REPO}@${REF}..."
 
 # Download as a tarball to preserve git file permissions (100755 on scripts)
-curl -fsSL "https://api.github.com/repos/${REPO}/tarball/${BRANCH}" \
+curl -fsSL "https://api.github.com/repos/${REPO}/tarball/${REF}" \
     | tar -xz --strip-components=1 -C "$BUILD_DIR"
 
 # Resolve PLUGINS to a path relative to BUILD_DIR

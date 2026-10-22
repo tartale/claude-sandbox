@@ -3,6 +3,11 @@
 # Usage: .claude/sandbox/start.sh [claude args]
 set -euo pipefail
 
+THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The launcher version: CS_REF (a commit, tag or branch of tartale/claude-sandbox), else
+# the commit init.sh pinned in the file "ref" next to this script, else main.
+export CS_REF="${CS_REF:-$(cat "${THIS_SCRIPT_DIR}/ref" 2>/dev/null || echo main)}"
+
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 export CS_IMAGE_TAG="${CS_IMAGE_TAG:-claude-sandbox}"
 NAME="${CS_CONTAINER_NAME:-cs-claude-sandbox}"
@@ -16,7 +21,7 @@ if [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || true)" = t
 else
     docker rm "$NAME" >/dev/null 2>&1 || true   # a stopped one from an earlier start
     CS_DOCKER_FLAGS="-d -t --restart=unless-stopped ${CS_DOCKER_FLAGS:-}" \
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/claude-sandbox.sh)" claude-sandbox --name "claude-sandbox" "$@" >/dev/null
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/${CS_REF}/claude-sandbox.sh)" claude-sandbox --name "claude-sandbox" "$@" >/dev/null
     echo "started $NAME"
 fi
 printf '\nAttach (detach with ctrl-p ctrl-q):\n\ndocker attach %s\n\nStop:\n\ndocker stop %s\n' "$NAME" "$NAME"
