@@ -66,7 +66,7 @@ The token stays in the environment, but it can only read, so the session can fet
 
 Changes you push to the user config repo reach a running session by themselves. The container passes Claude Code a `UserPromptSubmit` hook (`--settings`, so your own settings are untouched) that runs `claude-user-pull --hook` before each prompt. At most every five minutes it fetches the repo; if something new landed, it brings the clone up to date and puts "user preferences changed" plus the diff into the agent's context. You do not need to tell each agent to re-read. If the clone has local changes that are not applied yet, it reports the change without pulling and tells the agent to run `claude-user-sync` first. Run `claude-user-pull` by hand to check on demand.
 
-Don't grant the project's sandbox token access to the user config repo, or the protection is moot. Set these two variables in your shell, not in `.env`.
+Don't grant the project's sandbox token access to the user config repo, or the protection is moot.
 
 ## Which scope does something belong in?
 
