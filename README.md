@@ -81,7 +81,7 @@ It:
 All questions (token, registry login, ruleset) are asked up front, before anything is written. The optional ones are:
 
 - store a `write:packages` login for `ghcr.io` in a dedicated docker config (`~/.docker-sandbox`, override with `CS_SANDBOX_DOCKER_CONFIG`), so `CS_DOCKER_CONFIG` can share only that login and not your other registry logins. It prints the launch line and the steps to give the repo access to the package after the first push.
-- create a `main` branch ruleset (PR required, no force-push or deletion, no bypass). Needs `gh` logged in as a repo admin. The question is always asked; answering yes without `gh` installed stops the script.
+- create a `main` branch ruleset (PR required, no force-push or deletion, no bypass; it requires no approvals and no status checks, see [Merging and CI](#merging-and-ci)). Needs `gh` logged in as a repo admin. The question is always asked; answering yes without `gh` installed stops the script.
 
 `--yes` and `--no` answer the yes/no questions themselves, for runs with nobody at the keyboard. From the one-liner, put them after the command string, with a placeholder name first (it becomes `$0`): `/bin/bash -c "$(curl -fsSL .../init.sh)" init.sh --yes`. Piping into `bash -s` also passes them but takes over stdin, so prompts would not work. `--no` keeps every edited stub and creates nothing on GitHub. `--yes` replaces an edited stub whose template changed (after the usual backup) and creates the ruleset when it can (`gh` installed, you are an admin, none exists yet); the token and registry login need a secret pasted in, so `--yes` skips them. Both stop if the repo cannot be read from `origin`.
 
@@ -396,6 +396,15 @@ The `.env` file follows standard `KEY=VALUE` format. Variables not listed in the
 The file is read as data and never run as shell. `$VAR` and `${VAR}` are expanded from your host environment using `envsubst` (macOS: `brew install gettext && brew link --force gettext`; Debian/Ubuntu: `sudo apt-get install gettext-base`), and the result is passed to `docker run --env-file`. Only variables your host exports are expanded, so a literal `$` in a secret is left alone. Command substitution (`$(...)`, backticks) is not run; the launcher warns and passes the text through unchanged. Launcher settings (`CS_*`) belong in your shell environment, not in `.env`.
 
 The env file, `.envrc`, `.git/hooks` and `.claude/sandbox/{build,run,start,sync}.sh` are mounted read-only inside the container, because they run on the host later (when you launch, `cd` with direnv, or commit) and an agent must not be able to plant code in them. Edit them from the host. `.claude/sandbox/plugin.sh` stays writable so the agent can maintain the project's dependencies; it only runs inside the image build, but read its `git diff` before running `build.sh`. `.git/config` stays writable, so review `git diff` and `.git/config` before running host-side tooling on a checkout an agent has touched.
+
+### Merging and CI
+
+Nothing technical stops a session from merging its own pull request. The sandbox token has Contents and Pull requests write access and acts as your account, so GitHub will not let you approve what it opens, and the ruleset `init.sh` creates requires a PR but no approvals and no status checks. "Do not merge without approval" is a rule you give the agent, not one GitHub enforces. A real gate needs a second identity that does the merging or approving (a bot account with its own token, or a paid plan for reviews on a private repo). Short of that:
+
+- add required status checks (for example `test`) to the ruleset once CI exists, so red code cannot merge;
+- CI runs what the PR contains, including `plugin.sh`, the Dockerfile and the workflows, so keep registry and deploy secrets out of workflows that run on pull requests, and build and push images only from `main` or tags (this repo's `release.yml` runs on tags only);
+- give PR workflows read-only `GITHUB_TOKEN` permissions (`permissions: contents: read`), as this repo's do;
+- read the diff of `plugin.sh`, the Dockerfile, `.github/` and `.claude/sandbox/` before merging.
 
 To use a different file name, set `CS_ENV_FILE`:
 
