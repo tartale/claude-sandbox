@@ -346,14 +346,6 @@ Ask whether it would still be true on a different project. "Run the full test su
 
 ### Migrating an existing setup
 
-Transcripts and history of a project that ran under the old mount are in `~/.claude/projects/<project path with / as ->/` on the host. To keep them in the project's new state directory:
-
-```bash
-slug=$(pwd | sed 's#[^a-zA-Z0-9-]#-#g')    # run in the project
-mkdir -p ~/.claude-sandbox/$slug/.claude/projects
-mv ~/.claude/projects/$slug ~/.claude-sandbox/$slug/.claude/projects/-workspace
-```
-
 If you've been running the sandbox already, everything from every project is in `~/.claude/projects/-workspace/` on the host. Nothing is deleted — that bucket is simply no longer used, since each project now mounts its own. To carry old memories forward, sort them by hand:
 
 ```bash
