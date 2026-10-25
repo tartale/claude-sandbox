@@ -4,7 +4,7 @@ What the sandbox protects, and what it leaves to you.
 
 ## What the agent can and cannot change
 
-The env file, `.envrc`, `.git/config`, `.git/hooks`, `.claude/sandbox/ref` and `.claude/sandbox/{build,restart,run,start,sync}.sh` are mounted read-only inside the container. They run on the host later (when you launch, `cd` with direnv, or commit), and an agent must not be able to plant code in them. Edit them from the host.
+The env file, `.envrc`, `.envrc-cs`, `.git/config`, `.git/hooks`, `.claude/sandbox/ref` and `.claude/sandbox/{build,restart,run,start,sync}.sh` are mounted read-only inside the container. They run on the host later (when you launch, `cd` with direnv, or commit), and an agent must not be able to plant code in them. Edit them from the host.
 
 - `.claude/sandbox/plugin.sh` stays writable so the agent can maintain the project's dependencies. It only runs inside the image build, but read its `git diff` before running `build.sh`.
 - `.git/config` is read-only, so a session cannot add an alias, `core.fsmonitor` or `core.sshCommand` that your host git would run. Inside the container git is told not to record upstream tracking (`branch.autoSetupMerge=false`), so `git push -u` still pushes but prints an error about the config it cannot write, and `git branch --set-upstream-to`, `git remote add` and `git config` fail. Do those on the host; git replaces the file on write, so a running container keeps the old `.git/config` until it restarts.
@@ -44,7 +44,7 @@ Rules can then name the sandboxes' address range:
 docker network create --subnet 172.30.0.0/24 claude-sandbox
 ```
 
-Launch with `CS_DOCKER_FLAGS="--network claude-sandbox"` (set it in `.envrc`).
+Launch with `CS_DOCKER_FLAGS="--network claude-sandbox"` (set it in `.envrc-cs`).
 
 ### 2. Block the LAN (Linux host or NAS)
 
