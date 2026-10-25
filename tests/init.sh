@@ -150,6 +150,31 @@ find "${SB}/.init-base" -mindepth 1 -delete
 run_init "n\n${NO3}" "${WORK}/init-changed.sh"
 check "m is not offered without the previous template" lacks "m/D"
 
+# --- launcher settings in .envrc-cs ------------------------------------------
+new_project
+printf 'export MINE=1\n' > "${WORK}/proj/.envrc"
+run_init "${NO3}"
+RC="${WORK}/proj/.envrc-cs"
+names() { grep -oE '^(# )?(export )?[A-Z][A-Z0-9_]*=' "$1" | sed -E 's/^(# )?(export )?//; s/=$//'; }
+check "the settings go in .envrc-cs" contains "${RC}" 'export CS_IMAGE_REPO=ghcr.io/tartale/claude-sandbox'
+check ".envrc-cs comments every variable directly above it" test "$(awk '/^(# )?(export )?[A-Z_]+=/ && prev ~ /^# [A-Za-z-]/ { n++ } { prev = $0 } END { print n + 0 }' "${RC}")" -eq "$(grep -cE '^(# )?(export )?[A-Z_]+=' "${RC}")"
+check ".envrc-cs documents the build and sync variables" test "$(grep -cE '^# export (LANGUAGE_VERSIONS|CLAUDE_VERSION|CS_CONTAINER_NAME|CS_REF|CS_USER_CONFIG_CHECKOUT)=' "${RC}")" -eq 5
+check ".envrc-cs lists its variables in alphabetical order" test "$(names "${RC}")" = "$(names "${RC}" | LC_ALL=C sort)"
+check ".envrc gets no variables" absent "${WORK}/proj/.envrc" 'CS_IMAGE_REPO'
+check ".envrc loads .envrc-cs" contains "${WORK}/proj/.envrc" 'source_env .envrc-cs'
+check "...keeping what was in .envrc" contains "${WORK}/proj/.envrc" 'export MINE=1'
+run_init "${NO3}"
+check ".envrc loads .envrc-cs only once" test "$(grep -c '^source_env .envrc-cs' "${WORK}/proj/.envrc")" -eq 1
+sed -i.bak 's/^export CS_IMAGE_TAG=.*/export CS_IMAGE_TAG=mine/' "${RC}"; rm -f "${RC}.bak"
+cp "${RC}" "${WORK}/rc.before"
+run_init "${NO3}"
+check "a value you set in .envrc-cs is kept" contains "${RC}" 'export CS_IMAGE_TAG=mine'
+check "...and the file is unchanged by another run" cmp -s "${RC}" "${WORK}/rc.before"
+{ cat "${RC}"; printf '\n# Zzz.\nexport ZZZ=1\n\n# Aaa.\nexport AAA=1\n'; } > "${WORK}/rc.unsorted"; cp "${WORK}/rc.unsorted" "${RC}"
+run_init "${NO3}"
+check "a later run puts the entries back in order" test "$(names "${RC}")" = "$(names "${RC}" | LC_ALL=C sort)"
+check "...without losing any" contains "${RC}" 'export ZZZ=1'
+
 # --- user-scope settings in .env ----------------------------------------------
 new_project
 run_init "${NO3}"
@@ -158,20 +183,31 @@ check "adds the user-config repo, commented out, pre-filled from the owner" cont
 check "adds the user-config token, commented out and empty" contains "${ENVF}" '# CS_USER_CONFIG_TOKEN='
 check "puts a comment directly above each" test "$(awk '/^# CS_USER_CONFIG_(REPO|TOKEN)=/ && prev ~ /^# [A-Z].*\.$/ { n++ } { prev = $0 } END { print n + 0 }' "${ENVF}")" -eq 2
 check "the token comment says how to share it across projects" contains "${ENVF}" 'To share one token across projects'
-check "starts with a header on how the file is read" contains "${ENVF}" '# Read as data, never run as shell'
-ENVRC="${WORK}/proj/.envrc"
-check ".envrc comments every variable directly above it" test "$(awk '/^(# )?(export )?[A-Z_]+=/ && prev ~ /^# [A-Za-z-]/ { n++ } { prev = $0 } END { print n + 0 }' "${ENVRC}")" -eq "$(grep -cE '^(# )?(export )?[A-Z_]+=' "${ENVRC}")"
-check ".envrc documents the build and sync variables" test "$(grep -cE '^# export (LANGUAGE_VERSIONS|CLAUDE_VERSION|CS_CONTAINER_NAME|CS_REF|CS_USER_CONFIG_CHECKOUT)=' "${ENVRC}")" -eq 5
+check "the entries sit in a marked block" test "$(grep -cE 'claude-sandbox: (begin|end) #' "${ENVF}")" -eq 2
+check "the block says how the file is read" contains "${ENVF}" 'Read as data, never run as shell'
 check ".env is mode 600" mode_is "${ENVF}" 600
 check ".env is git-excluded" contains "${WORK}/proj/.git/info/exclude" '.env'
+BEGIN=$(grep 'claude-sandbox: begin' "${ENVF}"); END=$(grep 'claude-sandbox: end' "${ENVF}")
+
+printf 'MY_KEY=abc\n# my note\nOTHER=1\n' > "${ENVF}"
+run_init "${NO3}"
+check "an existing .env keeps its content as written" test "$(head -n 3 "${ENVF}")" = "$(printf 'MY_KEY=abc\n# my note\nOTHER=1')"
+check "...with the block after it, set off by a blank line" test "$(sed -n 4p "${ENVF}")" = "" -a "$(sed -n 5p "${ENVF}")" = "${BEGIN}"
+cp "${ENVF}" "${WORK}/env.before"
+run_init "${NO3}"
+check "...and another run leaves the file unchanged" cmp -s "${ENVF}" "${WORK}/env.before"
+
+printf 'MINE=1\n\n%s\n# banner\n\n# Z.\nCS_USER_CONFIG_TOKEN=x\n\n# A.\nCS_GITHUB_TOKEN=y\n\n%s\ntail=1\n' "${BEGIN}" "${END}" > "${ENVF}"
+run_init "${NO3}"
+check "entries already in the block are kept and put in order" test "$(names "${ENVF}" | tr '\n' ' ')" = "MINE CS_GITHUB_TOKEN CS_USER_CONFIG_REPO CS_USER_CONFIG_TOKEN "
+check "...with the lines around the block untouched" test "$(head -n 1 "${ENVF}")" = "MINE=1" -a "$(tail -n 1 "${ENVF}")" = "tail=1"
+check "...and a value in the block kept" contains "${ENVF}" 'CS_USER_CONFIG_TOKEN=x'
+
 printf 'CS_USER_CONFIG_REPO=me/mine\n' > "${ENVF}"
 run_init "${NO3}"
 check "an existing repo setting is kept" contains "${ENVF}" 'CS_USER_CONFIG_REPO=me/mine'
 check "...and not repeated" test "$(grep -cE '^#? ?CS_USER_CONFIG_REPO=' "${ENVF}")" -eq 1
 check "...while the missing token is added" contains "${ENVF}" '# CS_USER_CONFIG_TOKEN='
-check "the header is written once, ahead of existing entries" test "$(grep -c '^# Read as data' "${ENVF}")" -eq 1 -a "$(head -n 1 "${ENVF}" | cut -c1-12)" = "# Passed int"
-run_init "${NO3}"
-check "...and not repeated on another run" test "$(grep -c '^# Read as data' "${ENVF}")" -eq 1
 
 # --- restart.sh: build, stop, start with the old arguments ------------------
 new_project

@@ -521,19 +521,79 @@ elif [ "$PIN_REF" != latest ]; then
     warn "could not resolve $PIN_REF on GitHub; the stubs fetch main until init.sh can pin a commit"
 fi
 
-# --- launcher settings in .envrc ---------------------------------------------
-# Add any CS_ launcher variable that .envrc does not mention yet, with its default;
-# variables whose default is "unset" go in commented out.
-say "Launcher settings in .envrc"
+# --- entries: .envrc-cs and the env file --------------------------------------
+# The claude-sandbox variables live in .envrc-cs (loaded by .envrc through source_env) and in
+# one marked block of the env file, so what init.sh manages is kept apart from your own
+# settings. Each is an "entry": comment lines, then the variable (or its commented-out
+# form) as the last line; entries are separated by blank lines and kept in alphabetical order.
+CS_RC=.envrc-cs
+CS_BEGIN='# ################################## claude-sandbox: begin ###################################'
+CS_END='# ################################### claude-sandbox: end ####################################'
+CS_BANNER='# CS_ variables for claude-sandbox. init.sh manages this block and keeps the entries
+# in alphabetical order; everything outside it is yours and is never touched.
+# Passed into the container (docker --env-file). Read as data, never run as shell: $VAR and
+# ${VAR} are expanded from the host environment (envsubst) and $(...) is not run.
+# Settings for the launcher itself (CS_IMAGE_TAG and so on) belong in .envrc-cs.'
+
+# cs_sort_entries -- paragraphs on stdin, sorted by variable name on stdout; a paragraph
+# without a variable (a header) stays first, in its original order.
+cs_sort_entries() {
+    awk 'BEGIN { RS = ""; FS = "\n" }
+    {
+        n = split($0, line, "\n"); last = line[n]
+        text = $0; gsub("\n", "\001", text)
+        if (last ~ /^(# ?)?(export )?[A-Z][A-Z0-9_]*=/) {
+            name = last; sub(/^(# ?)?(export )?/, "", name); sub(/=.*/, "", name)
+            printf "1\t%s\t%s\n", name, text
+        } else printf "0\t%06d\t%s\n", NR, text
+    }' | LC_ALL=C sort -t "$(printf '\t')" -k1,1 -k2,2 \
+       | awk '{ sub(/^[^\t]*\t[^\t]*\t/, ""); gsub("\001", "\n"); if (NR > 1) print ""; print }'
+}
+
+# cs_file_put FILE ENTRY -- add ENTRY to FILE, which init.sh owns outright.
+cs_file_put() {
+    local tmp; tmp=$(mktemp)
+    { cat "$1" 2>/dev/null; printf '\n%s\n' "$2"; } | cs_sort_entries > "$tmp"
+    cat "$tmp" > "$1"; rm -f "$tmp"
+}
+
+# cs_block_put FILE ENTRY -- add ENTRY to the claude-sandbox block of FILE (appended at the
+# end when there is none); the rest of the file is written back as it was.
+cs_block_put() {
+    local file=$1 entry=$2 line state=before before='' block='' after='' entries tmp
+    if [ -f "$file" ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            case $state in
+                before) if [ "$line" = "$CS_BEGIN" ]; then state=block; else before+=$line$'\n'; fi ;;
+                block)  if [ "$line" = "$CS_END" ]; then state=after; else block+=$line$'\n'; fi ;;
+                after)  after+=$line$'\n' ;;
+            esac
+        done < "$file"
+    fi
+    entries=$(printf '%s\n\n%s\n' "${block#*$'\n\n'}" "$entry" | cs_sort_entries)
+    tmp=$(mktemp)
+    { printf '%s' "$before"
+      if [ -n "$before" ] && [[ "$before" != *$'\n\n' ]]; then echo; fi
+      printf '%s\n%s\n\n%s\n\n%s\n' "$CS_BEGIN" "$CS_BANNER" "$entries" "$CS_END"
+      printf '%s' "$after"; } > "$tmp"
+    cat "$tmp" > "$file"; rm -f "$tmp"
+}
+
+# --- launcher settings in .envrc-cs ------------------------------------------
+# Add any launcher variable that .envrc-cs does not mention yet, with its default;
+# variables whose default is "unset" go in commented out. .envrc loads the file.
+say "Launcher settings in $CS_RC"
+[ -s "$CS_RC" ] || printf '# claude-sandbox settings, loaded by .envrc (source_env %s). init.sh keeps the\n# entries in alphabetical order and adds any that are missing; your values are kept.\n' "$CS_RC" > "$CS_RC"
 add_setting() {   # NAME VALUE ACTIVE(1|0) COMMENT
-    if [ -f .envrc ] && grep -qE "^[[:space:]]*#?[[:space:]]*(export[[:space:]]+)?$1=" .envrc; then
+    if grep -qE "^[[:space:]]*#?[[:space:]]*(export[[:space:]]+)?$1=" "$CS_RC"; then
         note "kept    $1"
         return
     fi
-    [ -s .envrc ] && echo >> .envrc
-    printf '%s\n' "$4" | sed 's/^/# /' >> .envrc
-    if [ "$3" = 1 ]; then printf 'export %s=%s\n' "$1" "$2" >> .envrc
-    else printf '# export %s=%s\n' "$1" "$2" >> .envrc; fi
+    local entry
+    entry=$(printf '%s\n' "$4" | sed 's/^/# /')
+    if [ "$3" = 1 ]; then entry+=$(printf '\nexport %s=%s' "$1" "$2")
+    else entry+=$(printf '\n# export %s=%s' "$1" "$2"); fi
+    cs_file_put "$CS_RC" "$entry"
     ok "added   $1"
 }
 add_setting CS_IMAGE_REPO ghcr.io/tartale/claude-sandbox 1 "Image repository, including registry host and namespace. build.sh and the launcher must use the same value."
@@ -552,7 +612,13 @@ Set to latest to follow main with no pin; init.sh then writes none and removes a
 add_setting CS_USER_CONFIG_CHECKOUT "\$HOME/.claude-user" 0 "Your own checkout of the user config repo on the host, where sync.sh applies the sandbox's patch. The launcher does not read it."
 add_setting LANGUAGE_VERSIONS "" 0 "build.sh: language version pins, space-separated <language>-<version>, e.g. \"go-1.25.10\". A plugin with no entry here installs the latest stable."
 add_setting CLAUDE_VERSION "" 0 "build.sh: Claude Code version baked into the image. Default: latest."
-if command -v direnv >/dev/null; then note "to load them:"; cmd "direnv allow"; else note "direnv not installed; export these in your shell instead"; fi
+cs_file_put "$CS_RC" ""   # sorts what is there, so a file edited by hand is put back in order
+if ! grep -qE '^[[:space:]]*source_env[[:space:]]+(\./)?\.envrc-cs[[:space:]]*$' .envrc 2>/dev/null; then
+    [ -s .envrc ] && echo >> .envrc
+    printf '# claude-sandbox launcher settings\nsource_env %s\n' "$CS_RC" >> .envrc
+    ok "added   source_env $CS_RC to .envrc"
+fi
+if command -v direnv >/dev/null; then note "to load them:"; cmd "direnv allow"; else note "direnv not installed; load them in your shell with:"; cmd "source $CS_RC"; fi
 
 # --- fine-grained PAT for git and gh -----------------------------------------
 if [ "$DO_TOKEN" = 1 ]; then
@@ -580,12 +646,10 @@ if [ "$DO_TOKEN" = 1 ]; then
           touch "$ENV_FILE"
           tmp=$(mktemp)
           env_comment="# Fine-grained GitHub token, limited to $REPO (git and gh in the sandbox). Whatever it can do, the agent can do: keep it to Contents, Pull requests and Issues write, with no Administration or Workflows."
-          # Drop any earlier entry and its comment, plus trailing blank lines, then append.
-          grep -vxF -e "$env_comment" "$ENV_FILE" | grep -v '^CS_GITHUB_TOKEN=' \
-              | awk '{ l[NR] = $0 } /./ { n = NR } END { for (i = 1; i <= n; i++) print l[i] }' > "$tmp" || true
-          [ -s "$tmp" ] && echo >> "$tmp"
-          printf '%s\nCS_GITHUB_TOKEN=%s\n' "$env_comment" "$TOKEN" >> "$tmp"
-          cat "$tmp" > "$ENV_FILE"; rm -f "$tmp" )
+          # Drop any earlier entry and its comment; the new one goes in the claude-sandbox block.
+          { grep -vxF -e "$env_comment" "$ENV_FILE" | grep -v '^CS_GITHUB_TOKEN=' > "$tmp"; } || true
+          cat "$tmp" > "$ENV_FILE"; rm -f "$tmp"
+          cs_block_put "$ENV_FILE" "$(printf '%s\nCS_GITHUB_TOKEN=%s' "$env_comment" "$TOKEN")" )
         chmod 600 "$ENV_FILE"
         if git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q "$ENV_FILE"; then
             echo "$ENV_FILE" >> "$(git rev-parse --git-dir)/info/exclude"
@@ -604,18 +668,6 @@ fi
 # session simply has no user scope), so they go in commented out; the repo is
 # pre-filled with the usual name next to this project's owner.
 say "User-scope settings in $ENV_FILE"
-# A header, once, saying how the file is read.
-ENV_HEADER="Passed into the container (docker --env-file); add anything the project needs as KEY=VALUE."
-ensure_env_header() {
-    [ -f "$ENV_FILE" ] && grep -qF -- "# $ENV_HEADER" "$ENV_FILE" && return
-    ( umask 077
-      touch "$ENV_FILE"
-      tmp=$(mktemp)
-      { printf '# %s\n# Read as data, never run as shell: $VAR and ${VAR} are expanded from the host environment\n# (envsubst) and $(...) is not run. Settings for the launcher itself belong in .envrc.\n' "$ENV_HEADER"
-        [ -s "$ENV_FILE" ] && { echo; cat "$ENV_FILE"; }; } > "$tmp"
-      cat "$tmp" > "$ENV_FILE"; rm -f "$tmp" )
-}
-ensure_env_header
 add_env_setting() {   # NAME VALUE COMMENT
     if [ -f "$ENV_FILE" ] && grep -qE "^[[:space:]]*#?[[:space:]]*$1=" "$ENV_FILE"; then
         note "kept    $1"
@@ -623,9 +675,8 @@ add_env_setting() {   # NAME VALUE COMMENT
     fi
     ( umask 077
       touch "$ENV_FILE"
-      [ -s "$ENV_FILE" ] && echo >> "$ENV_FILE"
-      printf '%s\n' "$3" | sed 's/^/# /' >> "$ENV_FILE"
-      printf '# %s=%s\n' "$1" "$2" >> "$ENV_FILE" )
+      cs_block_put "$ENV_FILE" "$(printf '%s\n' "$3" | sed 's/^/# /')
+# $1=$2" )
     ok "added   $1"
 }
 add_env_setting CS_USER_CONFIG_REPO "${REPO%%/*}/claude-user" "Private repo (owner/name) with your user-scope rules and memories, cloned read-only into the sandbox at start.
@@ -633,6 +684,7 @@ Optional: without it the session has no user scope. Set it together with CS_USER
 add_env_setting CS_USER_CONFIG_TOKEN "" "Fine-grained token with Contents: Read-only on that one repo. It stays in the environment so claude-user-pull can fetch later changes; it cannot push.
 This file is readable inside the sandbox, so never give this token, or the project's, access to anything else.
 To share one token across projects, export it once on the host and write CS_USER_CONFIG_TOKEN=\$YOUR_VARIABLE here: \$VAR is expanded from the host environment."
+if grep -qxF "$CS_BEGIN" "$ENV_FILE" 2>/dev/null; then ( umask 077; cs_block_put "$ENV_FILE" "" ); fi   # sorts what is there
 chmod 600 "$ENV_FILE"
 if git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q "$ENV_FILE"; then
     echo "$ENV_FILE" >> "$(git rev-parse --git-dir)/info/exclude"
@@ -659,7 +711,7 @@ if [ "$DO_REGISTRY" = 1 ]; then
       printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$(printf '%s:%s' "$GHUSER" "$CT" | base64 | tr -d '\n')" > "$DOCKER_DIR/config.json" )
     unset CT H
     ok "stored in $DOCKER_DIR"
-    note "share it with the container: uncomment CS_DOCKER_CONFIG in .envrc, or launch with (set in your shell, not $ENV_FILE):"
+    note "share it with the container: uncomment CS_DOCKER_CONFIG in .envrc-cs, or launch with (set in your shell, not $ENV_FILE):"
     cmd "CS_DOCKER_CONFIG=$DOCKER_DIR .claude/sandbox/run.sh"
     note "after the first push: package settings -> Manage Actions access -> add $REPO (Write)"
     note "to link the package to the repo, add this to the Dockerfile:"

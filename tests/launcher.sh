@@ -124,11 +124,12 @@ check "no protect mounts when the files are absent" lacks "ARG:${WORK}/proj/.env
 check "...nor for .git/config" lacks "ARG:${WORK}/proj/.git/config:/workspace/.git/config:ro"
 
 mkdir -p "${WORK}/proj/.git/hooks"
-touch "${WORK}/proj/.envrc" "${WORK}/proj/.env" "${WORK}/proj/.git/config"
+touch "${WORK}/proj/.envrc" "${WORK}/proj/.envrc-cs" "${WORK}/proj/.env" "${WORK}/proj/.git/config"
 run_launcher
 check ".git/config is mounted read-only" has "ARG:${WORK}/proj/.git/config:/workspace/.git/config:ro"
 check ".git/hooks is mounted read-only" has "ARG:${WORK}/proj/.git/hooks:/workspace/.git/hooks:ro"
 check ".envrc is mounted read-only" has "ARG:${WORK}/proj/.envrc:/workspace/.envrc:ro"
+check ".envrc-cs is mounted read-only" has "ARG:${WORK}/proj/.envrc-cs:/workspace/.envrc-cs:ro"
 check ".env is mounted read-only" has "ARG:${WORK}/proj/.env:/workspace/.env:ro"
 
 mkdir -p "${WORK}/proj/.claude/sandbox"

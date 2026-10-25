@@ -18,7 +18,7 @@ The examples below call `build-image.sh` directly to show its environment variab
 
 ### Build settings
 
-`build-image.sh` reads these from the environment, so the stubs pick up the ones in `.envrc` (each is documented there): `CS_IMAGE_REPO`, `CS_IMAGE_TAG`, `LANGUAGE_VERSIONS` (`"go-1.25.10"`-style pins) and `CLAUDE_VERSION`. `PLUGINS` (a built-in plugin name, local path or URL) is set by `build.sh` to `plugin.sh`; set it yourself when calling `build-image.sh` directly:
+`build-image.sh` reads these from the environment, so the stubs pick up the ones in `.envrc-cs` (each is documented there): `CS_IMAGE_REPO`, `CS_IMAGE_TAG`, `LANGUAGE_VERSIONS` (`"go-1.25.10"`-style pins) and `CLAUDE_VERSION`. `PLUGINS` (a built-in plugin name, local path or URL) is set by `build.sh` to `plugin.sh`; set it yourself when calling `build-image.sh` directly:
 
 ```bash
 # Built-in language plugin

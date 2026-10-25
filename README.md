@@ -19,8 +19,8 @@ Run this once from the project's root, on your host (not inside a sandbox):
 It asks everything up front, then creates:
 
 - `.claude/sandbox/` scripts: `build.sh`, `run.sh`, `start.sh`, `restart.sh`, `sync.sh` and `plugin.sh`. They wrap the launcher and use the repo name as the image tag. A script you have not edited is updated on each run; an edited one is only asked about when the template changed (Enter shows the diff, `m` merges your edits, and a replaced file is backed up to `<name>.bak.<timestamp>`).
-- `.claude/sandbox/ref`, which pins the launcher to a commit of this repo, so a change to `main` reaches the project only when you run `init.sh` again. `CS_REF=<commit|tag|branch>` chooses what to pin; `CS_REF=latest` pins nothing and removes an existing pin, so the project follows `main`. Put `export CS_REF=latest` in `.envrc` to keep that across `init.sh` runs.
-- `.envrc` and `.env` entries, each with a comment saying what it does (see [Configure](#configure)).
+- `.claude/sandbox/ref`, which pins the launcher to a commit of this repo, so a change to `main` reaches the project only when you run `init.sh` again. `CS_REF=<commit|tag|branch>` chooses what to pin; `CS_REF=latest` pins nothing and removes an existing pin, so the project follows `main`. Put `export CS_REF=latest` in `.envrc-cs` to keep that across `init.sh` runs.
+- `.envrc-cs`, with the launcher settings (each with a comment saying what it does), and a `source_env .envrc-cs` line in `.envrc`; and a marked block of `CS_` entries in `.env`. Entries are kept in alphabetical order, and nothing else in either file is touched (see [Configure](#configure)).
 - Optionally: a fine-grained GitHub token for `git` and `gh` in the sandbox, a package-only `ghcr.io` login, and a `main` branch ruleset (needs `gh` logged in as a repo admin).
 
 `--yes` and `--no` answer the yes/no questions for runs with nobody at the keyboard; the token and registry login need a pasted secret, so both skip them. From the one-liner, put them after the command string with a placeholder first: `/bin/bash -c "$(curl -fsSL .../init.sh)" init.sh --yes`.
@@ -31,8 +31,8 @@ Commit `.claude/sandbox/` (including `ref`). Run `init.sh` again to update the s
 
 Every setting is documented where it lives:
 
-- **`.envrc`**: launcher settings (`CS_*`: image, docker flags, limits, and so on). Load it with direnv, or export the variables in your shell.
-- **`.env`**: secrets and variables passed into the container (`CS_GITHUB_TOKEN`, your user-config repo and token, anything else the project needs).
+- **`.envrc-cs`**: launcher settings (`CS_*`: image, docker flags, limits, and so on). `init.sh` adds `source_env .envrc-cs` to `.envrc`, so direnv loads it; without direnv, `source .envrc-cs` in your shell.
+- **`.env`**: secrets and variables passed into the container. `init.sh` keeps `CS_GITHUB_TOKEN` and your user-config repo and token in a marked block; add anything else the project needs outside it.
 - **`.claude/sandbox/plugin.sh`**: the tools to install in the project's image. Run `.claude/sandbox/build.sh` after changing it. See [Plugins and custom images](docs/plugins.md).
 
 ## Run
