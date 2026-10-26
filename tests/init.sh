@@ -187,6 +187,8 @@ check "the entries sit in a marked block" test "$(grep -cE 'claude-sandbox: (beg
 check "the block says how the file is read" contains "${ENVF}" 'Read as data, never run as shell'
 check ".env is mode 600" mode_is "${ENVF}" 600
 check ".env is git-excluded" contains "${WORK}/proj/.git/info/exclude" '.env'
+check ".envrc is git-excluded" git -C "${WORK}/proj" check-ignore -q .envrc
+check ".envrc-cs is git-excluded" git -C "${WORK}/proj" check-ignore -q .envrc-cs
 BEGIN=$(grep 'claude-sandbox: begin' "${ENVF}"); END=$(grep 'claude-sandbox: end' "${ENVF}")
 
 printf 'MY_KEY=abc\n# my note\nOTHER=1\n' > "${ENVF}"

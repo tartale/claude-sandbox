@@ -618,6 +618,10 @@ if ! grep -qE '^[[:space:]]*source_env[[:space:]]+(\./)?\.envrc-cs[[:space:]]*$'
     printf '# claude-sandbox launcher settings\nsource_env %s\n' "$CS_RC" >> .envrc
     ok "added   source_env $CS_RC to .envrc"
 fi
+if git rev-parse --git-dir >/dev/null 2>&1 && ! { git check-ignore -q .envrc && git check-ignore -q "$CS_RC"; }; then
+    echo '.envrc*' >> "$(git rev-parse --git-dir)/info/exclude"
+    note "added .envrc* to .git/info/exclude"
+fi
 if command -v direnv >/dev/null; then note "to load them:"; cmd "direnv allow"; else note "direnv not installed; load them in your shell with:"; cmd "source $CS_RC"; fi
 
 # --- fine-grained PAT for git and gh -----------------------------------------
