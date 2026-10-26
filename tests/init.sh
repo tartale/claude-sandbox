@@ -232,6 +232,11 @@ check "--yes finishes without being asked anything" test "${rc}" -eq 0
 check "--yes replaces an edited stub whose template changed" contains "${SB}/plugin.sh" '# new header line'
 check "...after a backup" test "$(backups plugin.sh)" -eq 1
 check "--yes skips the token, which needs a pasted secret" lacks "Paste the token"
+
+# A paste wrapped in bracketed-paste markers is judged by the token inside.
+new_project
+run_init 'y\nn\nn\n\n\033[200~ghp_abc\033[201~\n'; rc=$?
+check "bracketed-paste markers are stripped from a pasted token" mentions "that is a classic token"
 check "--yes does not touch the ruleset without gh" lacks "ruleset created"
 
 edited_project
