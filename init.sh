@@ -631,6 +631,8 @@ if [ "$DO_TOKEN" = 1 ]; then
     (command -v open >/dev/null && open "$URL") || (command -v xdg-open >/dev/null && xdg-open "$URL") || warn "could not open a browser; use the link above"
 
     read -r -s -p "  Paste the token (hidden; blank skips): " TOKEN; echo
+    # A terminal in bracketed-paste mode wraps the paste in ESC[200~ ... ESC[201~.
+    TOKEN=${TOKEN//$'\e[200~'/}; TOKEN=${TOKEN//$'\e[201~'/}
     if [ -n "$TOKEN" ]; then
         problem=$(token_problem "$TOKEN") || die "$problem"
         ok "push access, no Administration"
