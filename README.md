@@ -31,7 +31,7 @@ Commit `.claude/sandbox/` (including `ref`). Run `init.sh` again to update the s
 
 Every setting is documented where it lives:
 
-- **`.envrc-cs`**: launcher settings (`CS_*`: image, docker flags, limits, and so on). `init.sh` adds `source_env .envrc-cs` to `.envrc`, so direnv loads it; without direnv, `source .envrc-cs` in your shell.
+- **`.envrc-cs`**: launcher settings (`CS_*`: image, docker flags, limits, and so on). `init.sh` adds `source_env .envrc-cs` to `.envrc`, so direnv loads it, and adds `.envrc*` to `.git/info/exclude` (local to the clone) so neither is committed by accident; without direnv, `source .envrc-cs` in your shell.
 - **`.env`**: secrets and variables passed into the container. `init.sh` keeps `CS_GITHUB_TOKEN` and your user-config repo and token in a marked block; add anything else the project needs outside it.
 - **`.claude/sandbox/plugin.sh`**: the tools to install in the project's image. Run `.claude/sandbox/build.sh` after changing it. See [Plugins and custom images](docs/plugins.md).
 
