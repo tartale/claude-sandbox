@@ -160,6 +160,10 @@ if "${REAL_ENVSUBST}"; then
     check "does not run command substitution" has 'ENV:X=$(echo hi)'
     check "warns with line numbers about command substitution" mentions "line(s) 1,2 use command substitution"
 
+    printf '# $(not run) and `id` in a comment\nX=1\n  # also $(this)\nY=$(id)\n' > "${WORK}/proj/.env"
+    run_launcher
+    check "warns only about the non-comment line" mentions "line(s) 4 use command substitution"
+
     printf 'A=1\n' > "${WORK}/alt.env"
     run_launcher CS_ENV_FILE="${WORK}/alt.env"
     check "CS_ENV_FILE selects another file" has "ENV:A=1"

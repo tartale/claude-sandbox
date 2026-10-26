@@ -38,7 +38,7 @@ if [ -f "$CS_ENV_FILE" ]; then
         echo "      sudo apt-get install gettext-base" >&2
         exit 1
     fi
-    CS_ENV_COMMANDS=$(grep -nE '\$\(|`' "$CS_ENV_FILE" | cut -d: -f1 | paste -sd, - || true)
+    CS_ENV_COMMANDS=$(grep -nE '\$\(|`' "$CS_ENV_FILE" | grep -vE '^[0-9]+:[[:space:]]*#' | cut -d: -f1 | paste -sd, - || true)
     if [ -n "$CS_ENV_COMMANDS" ]; then
         echo "warning: ${CS_ENV_FILE} line(s) ${CS_ENV_COMMANDS} use command substitution, which is not run; the text is passed through literally." >&2
     fi
