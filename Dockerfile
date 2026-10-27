@@ -30,7 +30,9 @@ RUN apt-get update \
  && git lfs install --system
 
 ARG CLAUDE_VERSION=latest
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_VERSION}
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+RUN --mount=type=secret,id=npmrc,target=/root/.npmrc \
+    npm_config_registry="$NPM_REGISTRY" npm install -g @anthropic-ai/claude-code@${CLAUDE_VERSION}
 
 # Rename the default 'node' user/group to 'claude'
 RUN usermod -l claude -d /home/claude -m node \
@@ -51,8 +53,9 @@ RUN chmod +x /usr/local/bin/install-plugins.sh /usr/local/bin/entrypoint.sh \
 ARG LANGUAGE_VERSIONS=""
 ARG PLUGINS=""
 RUN --mount=type=bind,target=/build \
+    --mount=type=secret,id=npmrc,target=/root/.npmrc \
     if [ -n "$PLUGINS" ]; then \
-        install-plugins.sh "/build/$PLUGINS"; \
+        npm_config_registry="$NPM_REGISTRY" install-plugins.sh "/build/$PLUGINS"; \
     fi
 
 ENV CUID=1000

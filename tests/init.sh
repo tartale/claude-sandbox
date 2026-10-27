@@ -158,7 +158,7 @@ RC="${WORK}/proj/.envrc-cs"
 names() { grep -oE '^(# )?(export )?[A-Z][A-Z0-9_]*=' "$1" | sed -E 's/^(# )?(export )?//; s/=$//'; }
 check "the settings go in .envrc-cs" contains "${RC}" 'export CS_IMAGE_REPO=ghcr.io/tartale/claude-sandbox'
 check ".envrc-cs comments every variable directly above it" test "$(awk '/^(# )?(export )?[A-Z_]+=/ && prev ~ /^# [A-Za-z-]/ { n++ } { prev = $0 } END { print n + 0 }' "${RC}")" -eq "$(grep -cE '^(# )?(export )?[A-Z_]+=' "${RC}")"
-check ".envrc-cs documents the build and sync variables" test "$(grep -cE '^# export (LANGUAGE_VERSIONS|CLAUDE_VERSION|CS_CONTAINER_NAME|CS_REF|CS_USER_CONFIG_CHECKOUT)=' "${RC}")" -eq 5
+check ".envrc-cs documents the build and sync variables" test "$(grep -cE '^# export (LANGUAGE_VERSIONS|CLAUDE_VERSION|CS_CONTAINER_NAME|CS_NPM_REGISTRY|CS_NPMRC|CS_REF|CS_USER_CONFIG_CHECKOUT)=' "${RC}")" -eq 7
 check ".envrc-cs lists its variables in alphabetical order" test "$(names "${RC}")" = "$(names "${RC}" | LC_ALL=C sort)"
 check ".envrc gets no variables" absent "${WORK}/proj/.envrc" 'CS_IMAGE_REPO'
 check ".envrc loads .envrc-cs" contains "${WORK}/proj/.envrc" 'source_env .envrc-cs'
