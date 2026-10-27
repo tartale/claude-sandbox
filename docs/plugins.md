@@ -34,6 +34,8 @@ PLUGINS=./my-tools.sh CS_IMAGE_TAG=my-tools /bin/bash -c "$(curl -fsSL https://r
 PLUGINS=https://example.com/my-tools.sh CS_IMAGE_TAG=my-tools /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
 ```
 
+To build from another npm registry, set `CS_NPM_REGISTRY` (its URL). If it needs credentials, put them in an npmrc file on the host (`//registry.example.com/:_authToken=...`) and set `CS_NPMRC` to its path. The file is mounted as a BuildKit secret, so the token is not in the image or its history. Both apply to Claude Code and to the plugins' `npm install` steps.
+
 ## Plugins
 
 Plugins are shell scripts that install additional tools into the sandbox. The `plugins/` directory contains ready-made language packs:

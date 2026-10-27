@@ -9,7 +9,9 @@ CS_IMAGE_REPO="${CS_IMAGE_REPO:-ghcr.io/tartale/claude-sandbox}"
 CS_IMAGE="${CS_IMAGE_REPO}:${CS_IMAGE_TAG}"
 PLUGINS="${PLUGINS:-}"
 LANGUAGE_VERSIONS="${LANGUAGE_VERSIONS:-}"
-CLAUDE_VERSION="${CLAUDE_VERSION:-$(npm view @anthropic-ai/claude-code version 2>/dev/null || echo latest)}"
+CS_NPM_REGISTRY="${CS_NPM_REGISTRY:-https://registry.npmjs.org/}"
+CS_NPMRC="${CS_NPMRC:-}"   # npmrc file with the registry's credentials, mounted as a build secret
+CLAUDE_VERSION="${CLAUDE_VERSION:-$(npm view --registry "$CS_NPM_REGISTRY" @anthropic-ai/claude-code version 2>/dev/null || echo latest)}"
 
 BUILD_DIR=$(mktemp -d)
 trap 'rm -rf "$BUILD_DIR"' EXIT
@@ -55,9 +57,18 @@ if [ -n "$PLUGINS" ]; then
     fi
 fi
 
+# The build always mounts an npmrc secret; without CS_NPMRC it is empty.
+if [ -z "$CS_NPMRC" ]; then
+    CS_NPMRC="$BUILD_DIR/.empty-npmrc"
+    : > "$CS_NPMRC"
+fi
+[ -f "$CS_NPMRC" ] || { echo "CS_NPMRC is not a file: $CS_NPMRC" >&2; exit 1; }
+
 BUILD_ARGS=(
     -t "$CS_IMAGE"
     --build-arg "CLAUDE_VERSION=$CLAUDE_VERSION"
+    --build-arg "NPM_REGISTRY=$CS_NPM_REGISTRY"
+    --secret "id=npmrc,src=$CS_NPMRC"
 )
 [ -n "$PLUGINS_ARG" ]        && BUILD_ARGS+=(--build-arg "PLUGINS=$PLUGINS_ARG")
 [ -n "$LANGUAGE_VERSIONS" ]  && BUILD_ARGS+=(--build-arg "LANGUAGE_VERSIONS=$LANGUAGE_VERSIONS")
