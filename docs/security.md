@@ -78,7 +78,7 @@ A macvlan container and its host cannot reach each other without extra setup. A 
 
 `network.sh` runs once per host, not per project. It detects the interface, subnet, gateway and resolver from the host's default route, shows what it found and asks before it creates anything. Re-running it only adds what is missing.
 
-Steps 1 and 2 in one go, on a Linux host or NAS (needs root):
+Steps 1 and 2 in one go, on a Linux host or NAS (needs root). Besides blocking your LAN, this drops new connections from the sandbox to the host itself (ssh, the web and admin ports), which a `DOCKER-USER` rule alone does not cover:
 
 ```bash
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh setup bridge
@@ -96,7 +96,7 @@ macvlan does not work over Wi-Fi; ipvlan does:
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh setup ipvlan --ip-range 192.168.1.192/28
 ```
 
-Each prints the `CS_DOCKER_FLAGS` line to put in `.envrc-cs`. Then check from a throwaway container that a LAN host is blocked (bridge only; with macvlan or ipvlan the router decides), DNS works and the internet is reachable. Pass your router's address, or leave it out to test the default gateway:
+Each prints the `CS_DOCKER_FLAGS` line to put in `.envrc-cs`. Then check from a throwaway container that a LAN host and the host's own ssh and web ports are blocked (bridge only; with macvlan or ipvlan the router decides), DNS works and the internet is reachable. Pass your router's address, or leave it out to test the default gateway:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh check 192.168.1.1
@@ -112,7 +112,7 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sand
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh remove
 ```
 
-`--name`, `--subnet`, `--gateway`, `--parent`, `--resolver` and `--mode l2|l3` override what it detects; `--yes` skips the confirmation. The bridge rules do not survive a reboot (the docker network does), so run `setup bridge` again after one. Traffic to the host's own addresses does not pass `DOCKER-USER`, so the bridge rules do not close ports the host itself listens on. Docker Desktop (macOS, Windows) cannot do any of this.
+`--name`, `--subnet`, `--gateway`, `--parent`, `--resolver` and `--mode l2|l3` override what it detects; `--yes` skips the confirmation. The bridge rules do not survive a reboot (the docker network does), so run `setup bridge` again after one. The host-side rules go in `INPUT`; a NAS whose firewall rewrites `INPUT` can push them down the chain, so run `check` after changing its firewall settings. Docker Desktop (macOS, Windows) cannot do any of this.
 
 ### 4. A filtering resolver
 
