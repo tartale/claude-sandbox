@@ -44,31 +44,42 @@ Rules can then name the sandboxes' address range:
 docker network create --subnet 172.30.0.0/24 claude-sandbox
 ```
 
-Launch with `CS_DOCKER_FLAGS="--network claude-sandbox"` (set it in `.envrc-cs`).
+Launch with this flag; put it in `.envrc-cs` to keep it:
+
+```bash
+export CS_DOCKER_FLAGS="--network claude-sandbox"
+```
 
 ### 2. Block the LAN (Linux host or NAS)
 
-Rules in the `DOCKER-USER` chain run before Docker's own. Drop the private ranges, and let DNS through to your resolver, so the session reaches the internet but not machines on your network:
+Rules in the `DOCKER-USER` chain run before Docker's own. Drop the private ranges, and let DNS through to your resolver, so the session reaches the internet but not machines on your network. Run these as root, with `RESOLVER` set to your resolver's address (`192.168.1.1` is an example):
 
 ```bash
+RESOLVER=192.168.1.1
 iptables -I DOCKER-USER -s 172.30.0.0/24 -d 10.0.0.0/8 -j DROP
 iptables -I DOCKER-USER -s 172.30.0.0/24 -d 172.16.0.0/12 -j DROP
 iptables -I DOCKER-USER -s 172.30.0.0/24 -d 192.168.0.0/16 -j DROP
-iptables -I DOCKER-USER -s 172.30.0.0/24 -d <resolver-ip> -p udp --dport 53 -j ACCEPT
+iptables -I DOCKER-USER -s 172.30.0.0/24 -d "$RESOLVER" -p udp --dport 53 -j ACCEPT
 ```
 
 The last rule is inserted last, so it is evaluated first. Docker Desktop (macOS, Windows) has no host `iptables` to edit; use the router (step 3) instead.
 
 ### 3. Allow only named hosts, at the router
 
-Container traffic leaves the host under the host's address, so a router rule cannot tell it from the host's own traffic. Give the sandbox its own LAN address with a `macvlan` or `ipvlan` network instead of the bridge in step 1:
+Container traffic leaves the host under the host's address, so a router rule cannot tell it from the host's own traffic. Give the sandbox its own LAN address with a `macvlan` or `ipvlan` network instead of the bridge in step 1. The subnet, gateway and parent interface below are examples; use your LAN's, and an address range the router does not hand out:
 
 ```bash
-docker network create -d macvlan --subnet ... --gateway ... -o parent=eth0 claude-sandbox
+docker network create -d macvlan --subnet 192.168.1.0/24 --gateway 192.168.1.1 -o parent=eth0 claude-sandbox
 ```
 
 A macvlan container and its host cannot reach each other without extra setup. A router or firewall that filters by hostname (OPNsense, pfSense or OpenWrt aliases, or per-client DNS filtering in Pi-hole or AdGuard Home) can then allow `github.com`, `api.github.com`, `api.anthropic.com` and your package registries, and block the rest.
 
 ### 4. A filtering resolver
 
-Point the container at a resolver that blocks what you don't want, with `CS_DOCKER_FLAGS="--dns <ip>"`. It is the cheapest step and the weakest: a session that connects by IP address skips it.
+Point the container at a resolver that blocks what you don't want (`192.168.1.1` is an example):
+
+```bash
+export CS_DOCKER_FLAGS="--dns 192.168.1.1"
+```
+
+It is the cheapest step and the weakest: a session that connects by IP address skips it.

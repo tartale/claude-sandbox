@@ -60,11 +60,27 @@ The token stays in the environment, but it can only read, so the session can fet
 .claude/sandbox/sync.sh
 ```
 
-`sync.sh show` pages through the patch and `sync.sh status` says whether one is waiting. `apply` (the default) shows what the patch changes (`d` shows the colored diff), asks before applying, then runs `git am` in the checkout named by `CS_USER_CONFIG_CHECKOUT` (default `~/.claude-user`) and pushes. The script is mounted read-only in the sandbox like the other launch scripts, so a session cannot edit it.
+Page through the patch:
+
+```bash
+.claude/sandbox/sync.sh show
+```
+
+Say whether one is waiting:
+
+```bash
+.claude/sandbox/sync.sh status
+```
+
+`apply` (the default) shows what the patch changes (`d` shows the colored diff), asks before applying, then runs `git am` in the checkout named by `CS_USER_CONFIG_CHECKOUT` (default `~/.claude-user`) and pushes. The script is mounted read-only in the sandbox like the other launch scripts, so a session cannot edit it.
 
 ### Keeping running sessions current
 
-Changes you push to the user config repo reach a running session by themselves. The container passes Claude Code a `UserPromptSubmit` hook (`--settings`, so your own settings are untouched) that runs `claude-user-pull --hook` before each prompt. At most every five minutes it fetches the repo; if something new landed, it brings the clone up to date and puts "user preferences changed" plus the diff into the agent's context. You do not need to tell each agent to re-read. If the clone has local changes that are not applied yet, it reports the change without pulling and tells the agent to run `claude-user-sync` first. Run `claude-user-pull` by hand to check on demand.
+Changes you push to the user config repo reach a running session by themselves. The container passes Claude Code a `UserPromptSubmit` hook (`--settings`, so your own settings are untouched) that runs `claude-user-pull --hook` before each prompt. At most every five minutes it fetches the repo; if something new landed, it brings the clone up to date and puts "user preferences changed" plus the diff into the agent's context. You do not need to tell each agent to re-read. If the clone has local changes that are not applied yet, it reports the change without pulling and tells the agent to run `claude-user-sync` first. To check on demand, run this inside the sandbox:
+
+```bash
+claude-user-pull
+```
 
 Don't grant the project's sandbox token access to the user config repo, or the protection is moot.
 
