@@ -2,7 +2,13 @@
 
 ## Building a custom image
 
-Put the project's plugins in `.claude/sandbox/plugin.sh`, then run `.claude/sandbox/build.sh`. It builds the project image and pushes it to `CS_IMAGE_REPO:CS_IMAGE_TAG`; `run.sh` and `start.sh` use the same tag. The stub wraps the `build-image.sh` one-liner, which also works on its own, with no repo checkout:
+Put the project's plugins in `.claude/sandbox/plugin.sh`, then build:
+
+```bash
+.claude/sandbox/build.sh
+```
+
+It builds the project image and pushes it to `CS_IMAGE_REPO:CS_IMAGE_TAG`; `run.sh` and `start.sh` use the same tag. The stub wraps the `build-image.sh` one-liner, which also works on its own, with no repo checkout:
 
 ```bash
 CS_IMAGE_TAG=my-sandbox /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
@@ -18,23 +24,40 @@ The examples below call `build-image.sh` directly to show its environment variab
 
 ### Build settings
 
-`build-image.sh` reads these from the environment, so the stubs pick up the ones in `.envrc-cs` (each is documented there): `CS_IMAGE_REPO`, `CS_IMAGE_TAG`, `LANGUAGE_VERSIONS` (`"go-1.25.10"`-style pins) and `CLAUDE_VERSION`. `PLUGINS` (a built-in plugin name, local path or URL) is set by `build.sh` to `plugin.sh`; set it yourself when calling `build-image.sh` directly:
+`build-image.sh` reads these from the environment, so the stubs pick up the ones in `.envrc-cs` (each is documented there): `CS_IMAGE_REPO`, `CS_IMAGE_TAG`, `LANGUAGE_VERSIONS` (`"go-1.25.10"`-style pins) and `CLAUDE_VERSION`. `PLUGINS` (a built-in plugin name, local path or URL) is set by `build.sh` to `plugin.sh`; set it yourself when calling `build-image.sh` directly.
+
+A built-in language plugin:
 
 ```bash
-# Built-in language plugin
 PLUGINS=python3 CS_IMAGE_TAG=my-python /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+```
 
-# Built-in plugin with version pin
+A built-in plugin with a version pin:
+
+```bash
 PLUGINS=go LANGUAGE_VERSIONS="go-1.24.0" CS_IMAGE_TAG=go-1.24 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+```
 
-# Local custom plugin script
+A local custom plugin script:
+
+```bash
 PLUGINS=./my-tools.sh CS_IMAGE_TAG=my-tools /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+```
 
-# Remote custom plugin script
+A remote custom plugin script:
+
+```bash
 PLUGINS=https://example.com/my-tools.sh CS_IMAGE_TAG=my-tools /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
 ```
 
-To build from another npm registry, set `CS_NPM_REGISTRY` (its URL). If it needs credentials, put them in an npmrc file on the host (`//registry.example.com/:_authToken=...`) and set `CS_NPMRC` to its path. The file is mounted as a BuildKit secret, so the token is not in the image or its history. Both apply to Claude Code and to the plugins' `npm install` steps.
+To build from another npm registry, set `CS_NPM_REGISTRY` (its URL, with the `https://`). If it needs credentials, put them in an npmrc file on the host and set `CS_NPMRC` to its path. The file is mounted as a BuildKit secret, so the token is not in the image or its history. Both apply to Claude Code and to the plugins' `npm install` steps. For example, in `.envrc-cs`:
+
+```bash
+export CS_NPM_REGISTRY=https://registry.example.com/npm/
+export CS_NPMRC=$HOME/.npmrc
+```
+
+where the npmrc holds a line such as `//registry.example.com/npm/:_authToken=<token>`.
 
 ## Plugins
 
@@ -63,7 +86,7 @@ The `plugins/tools/` directory contains ready-made tool packs:
 Built-in plugins are resolved by name regardless of directory, so `PLUGINS=docker` and `PLUGINS=go` both work. The Docker plugin installs only the client; bind-mount the host's Docker socket so the CLI can reach the host daemon:
 
 ```bash
-CS_DOCKER_FLAGS="-v /var/run/docker.sock:/var/run/docker.sock" ./claude-sandbox.sh
+CS_DOCKER_FLAGS="-v /var/run/docker.sock:/var/run/docker.sock" .claude/sandbox/run.sh
 ```
 
 Mounting the socket gives the sandbox root on the host (it can start privileged containers), so the launcher prints a warning when it sees one.
@@ -85,11 +108,15 @@ PLUGINS=playwright LANGUAGE_VERSIONS="playwright-1.55.0" CS_IMAGE_TAG=my-playwri
 
 Pass a built-in name or path via `PLUGINS`:
 
-```bash
-# no repo checkout needed
-PLUGINS=go CS_IMAGE_TAG=my-go /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+With no repo checkout:
 
-# or with a local repo checkout
+```bash
+PLUGINS=go CS_IMAGE_TAG=my-go /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+```
+
+With a local repo checkout:
+
+```bash
 PLUGINS=plugins/languages/go.sh CS_IMAGE_TAG=my-tag make image
 ```
 
@@ -97,11 +124,15 @@ PLUGINS=plugins/languages/go.sh CS_IMAGE_TAG=my-tag make image
 
 Pass `LANGUAGE_VERSIONS` as a space-separated list of `<language>-<version>` entries. Each plugin extracts only its own entry:
 
-```bash
-# no repo checkout needed
-PLUGINS=go LANGUAGE_VERSIONS="go-1.25.10" CS_IMAGE_TAG=go-1.25.10 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+With no repo checkout:
 
-# with a local repo checkout
+```bash
+PLUGINS=go LANGUAGE_VERSIONS="go-1.25.10" CS_IMAGE_TAG=go-1.25.10 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+```
+
+With a local repo checkout:
+
+```bash
 PLUGINS=plugins/languages/go.sh CS_IMAGE_TAG=go-1.25.10 LANGUAGE_VERSIONS="go-1.25.10" make image
 ```
 
@@ -116,11 +147,15 @@ Notes:
 
 Point `PLUGINS` at a local directory of `.sh` scripts to run all of them, in alphabetical order:
 
-```bash
-# no repo checkout needed
-PLUGINS=./my-plugins/ CS_IMAGE_TAG=my-tag /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+With no repo checkout:
 
-# with a local repo checkout
+```bash
+PLUGINS=./my-plugins/ CS_IMAGE_TAG=my-tag /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+```
+
+With a local repo checkout:
+
+```bash
 PLUGINS=plugins/languages CS_IMAGE_TAG=my-tag make image
 ```
 
@@ -131,9 +166,11 @@ Prefix filenames with numbers to control order when it matters (`01-go.sh`, `02-
 A plugin is any executable shell script. Create one anywhere and point `PLUGINS` at it:
 
 ```bash
+cat > my-tools.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 apt-get update && apt-get install -y my-tool && rm -rf /var/lib/apt/lists/*
+EOF
 ```
 
 The script runs as root during `docker build`, so standard `apt-get` installs work without `sudo`.
@@ -142,23 +179,28 @@ The script runs as root during `docker build`, so standard `apt-get` installs wo
 
 `PLUGINS_DIR` is pre-populated with the path to the root of the `plugins/` directory. A custom plugin can use it to source built-in language plugins by path.
 
-**Example — a Go + React stack:**
+**Example — a Go + React stack.** Create `go-react.sh`:
 
 ```bash
-# go-react.sh
+cat > go-react.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
 bash "$PLUGINS_DIR/languages/go.sh"
 bash "$PLUGINS_DIR/languages/react.sh"
+EOF
 ```
 
-```bash
-# no repo checkout needed
-PLUGINS=./go-react.sh CS_IMAGE_TAG=go-react /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+Build it with no repo checkout:
 
-# with a local repo checkout
-PLUGINS=plugins/languages/go-react.sh CS_IMAGE_TAG=go-react make image
+```bash
+PLUGINS=./go-react.sh CS_IMAGE_TAG=go-react /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+```
+
+Or with a local repo checkout:
+
+```bash
+PLUGINS=./go-react.sh CS_IMAGE_TAG=go-react make image
 ```
 
 Each sourced plugin respects `LANGUAGE_VERSIONS`, so you can still pin versions:
