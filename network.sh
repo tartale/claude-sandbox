@@ -8,8 +8,9 @@
 #   network.sh status
 #   network.sh remove
 #
-# bridge  a docker network of its own, plus DOCKER-USER rules that drop traffic to the private
-#         ranges (your LAN) while letting DNS reach your resolver. Needs root and a Linux host.
+# bridge  a docker network of its own, plus iptables rules that drop traffic from it to the private
+#         ranges (your LAN) and to the host itself (ssh, the admin UI), while letting DNS reach your
+#         resolver. Needs root and a Linux host.
 # macvlan/ipvlan  the network gets its own LAN addresses, from --ip-range, so a router or
 #         firewall can filter it by address. Use a range your DHCP server does not hand out.
 #         macvlan does not work over Wi-Fi; ipvlan l2 does.
@@ -69,15 +70,20 @@ detect_subnet() { ip route show dev "$1" scope link proto kernel 2>/dev/null | a
 detect_resolver() { awk '$1 == "nameserver" { print $2; exit }' /etc/resolv.conf 2>/dev/null; }
 
 # --- bridge ----------------------------------------------------------------------
-# DOCKER-USER rules run before docker's own. The ACCEPT is inserted last so it is evaluated
-# first; -C makes every step safe to repeat.
-bridge_rules() {   # prints "SUBNET ACTION target..." lines: drop rules first, then the accept
+# DOCKER-USER rules run before docker's own, and INPUT rules see traffic to the host itself. Each
+# ACCEPT is inserted after its DROP so it is evaluated first; -C makes every step safe to repeat.
+bridge_rules() {   # SUBNET RESOLVER -- prints "CHAIN rule" lines, the last-evaluated first
     local r
-    for r in $PRIVATE_RANGES; do echo "DROP -s $1 -d $r -j DROP"; done
-    [ -z "$2" ] || echo "ACCEPT -s $1 -d $2 -p udp --dport 53 -j ACCEPT"
+    for r in $PRIVATE_RANGES; do echo "DOCKER-USER -s $1 -d $r -j DROP"; done
+    [ -z "$2" ] || echo "DOCKER-USER -s $1 -d $2 -p udp --dport 53 -j ACCEPT"
+    # Traffic to the host's own addresses (ssh, the admin UI) goes through INPUT, not
+    # DOCKER-USER: drop what the sandbox starts there, but let replies and DNS through.
+    echo "INPUT -s $1 -j DROP"
+    [ -z "$2" ] || echo "INPUT -s $1 -d $2 -p udp --dport 53 -j ACCEPT"
+    echo "INPUT -s $1 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
 }
-rule_add() { read -r -a a <<<"$1"; iptables -C DOCKER-USER "${a[@]}" 2>/dev/null && { note "kept    iptables ${a[*]}"; return; }; iptables -I DOCKER-USER "${a[@]}"; ok "added   iptables ${a[*]}"; }
-rule_del() { read -r -a a <<<"$1"; while iptables -C DOCKER-USER "${a[@]}" 2>/dev/null; do iptables -D DOCKER-USER "${a[@]}"; ok "removed iptables ${a[*]}"; done; }
+rule_add() { read -r -a a <<<"$1"; iptables -C "${a[@]}" 2>/dev/null && { note "kept    iptables ${a[*]}"; return; }; iptables -I "${a[@]}"; ok "added   iptables ${a[*]}"; }
+rule_del() { read -r -a a <<<"$1"; while iptables -C "${a[@]}" 2>/dev/null; do iptables -D "${a[@]}"; ok "removed iptables ${a[*]}"; done; }
 
 setup_bridge() {
     need_root; need_docker
@@ -106,8 +112,9 @@ setup_bridge() {
         docker network create --subnet "$subnet" "$NAME" >/dev/null
         ok "created network $NAME"
     fi
-    while IFS= read -r line; do rule_add "${line#* }"; done < <(bridge_rules "$subnet" "$resolver")
-    note "Traffic to the host's own addresses does not pass DOCKER-USER; this does not close ports the host itself listens on."
+    while IFS= read -r line; do rule_add "$line"; done < <(bridge_rules "$subnet" "$resolver")
+    note "INPUT rules also stop the sandbox opening connections to the host itself (ssh, admin UI). On a NAS whose"
+    note "firewall rewrites INPUT, check they are still first after changing its settings: network.sh check."
     next_steps
 }
 
@@ -162,13 +169,19 @@ check() {   # [LAN_HOST]
     say "Checking $NAME ($driver) from a throwaway container"
     out=$(docker run --rm --network "$NAME" alpine sh -c '
         if ping -c 1 -W 2 "$1" >/dev/null 2>&1; then echo lan=reachable; else echo lan=blocked; fi
+        gw=$(ip route | awk "/default/ { print \$3; exit }"); open=""
+        for p in 22 80 443 5000 5001; do nc -w 2 "$gw" "$p" </dev/null >/dev/null 2>&1 && open="$open,$p"; done
+        if [ -n "$open" ]; then echo "host=${open#,}"; else echo host=blocked; fi
         if nslookup github.com >/dev/null 2>&1; then echo dns=ok; else echo dns=fail; fi
         if wget -q -T 5 -O /dev/null https://github.com 2>/dev/null; then echo internet=ok; else echo internet=fail; fi
     ' sh "$lan" 2>&1) || die "the test container did not run: $out"
-    local lanres dnsres netres bad=false
+    local lanres hostres dnsres netres bad=false
+    hostres=$(sed -n 's/^host=//p' <<<"$out")
     lanres=$(sed -n 's/^lan=//p' <<<"$out"); dnsres=$(sed -n 's/^dns=//p' <<<"$out"); netres=$(sed -n 's/^internet=//p' <<<"$out")
     if [ "$driver" = bridge ]; then
         if [ "$lanres" = blocked ]; then ok "LAN host $lan is blocked"; else warn "LAN host $lan is reachable: the DROP rules are not in effect"; bad=true; fi
+        if [ "$hostres" = blocked ]; then ok "the host itself is blocked (ssh, web, DSM ports)"
+        else warn "the sandbox can open ports $hostres on the host: the INPUT rules are not in effect"; bad=true; fi
     else
         note "LAN host $lan: $lanres (the router decides for $driver; this is only informational)"
     fi
@@ -185,8 +198,11 @@ status() {
         echo "  no network named $NAME"
     fi
     if command -v iptables >/dev/null && [ "$(id -u)" = 0 ]; then
-        echo "  DOCKER-USER rules:"
-        iptables -S DOCKER-USER 2>/dev/null | grep -- '-s ' | sed 's/^/    /' || echo "    none"
+        local chain
+        for chain in DOCKER-USER INPUT; do
+            echo "  $chain rules:"
+            iptables -S "$chain" 2>/dev/null | grep -- '-s ' | sed 's/^/    /' || echo "    none"
+        done
     fi
 }
 
@@ -197,7 +213,7 @@ remove() {
     if command -v iptables >/dev/null && [ "$(id -u)" = 0 ] && [ -n "$subnet" ]; then
         local resolver line
         resolver=$(detect_resolver)
-        while IFS= read -r line; do rule_del "${line#* }"; done < <(bridge_rules "$subnet" "${RESOLVER:-$resolver}")
+        while IFS= read -r line; do rule_del "$line"; done < <(bridge_rules "$subnet" "${RESOLVER:-$resolver}")
     elif [ -n "$subnet" ]; then
         note "Not root: any iptables rules for $subnet are left in place."
     fi
