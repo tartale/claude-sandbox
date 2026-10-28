@@ -28,7 +28,7 @@ Nothing technical stops a session from merging its own pull request. The sandbox
 
 The container can reach any host, including the other machines on your LAN. Anything the session can read (the project token, the user-config token, the Claude login) can therefore be sent out. Limiting what the container can reach has to happen outside it: the sandbox has no `NET_ADMIN` and cannot change its own rules.
 
-The launcher sets none of this up, and the commands below are starting points that have not been run against your network. Pick the steps that match what you want to protect:
+The launcher sets none of this up. [`network.sh`](#automating-steps-1-to-3) automates steps 1 to 3 (it has been tested against stubs, not against a real firewall or router), and the manual commands below are what it does. Pick the steps that match what you want to protect:
 
 | Goal | Steps | Strength |
 |---|---|---|
@@ -73,6 +73,46 @@ docker network create -d macvlan --subnet 192.168.1.0/24 --gateway 192.168.1.1 -
 ```
 
 A macvlan container and its host cannot reach each other without extra setup. A router or firewall that filters by hostname (OPNsense, pfSense or OpenWrt aliases, or per-client DNS filtering in Pi-hole or AdGuard Home) can then allow `github.com`, `api.github.com`, `api.anthropic.com` and your package registries, and block the rest.
+
+### Automating steps 1 to 3
+
+`network.sh` runs once per host, not per project. It detects the interface, subnet, gateway and resolver from the host's default route, shows what it found and asks before it creates anything. Re-running it only adds what is missing.
+
+Steps 1 and 2 in one go, on a Linux host or NAS (needs root):
+
+```bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh setup bridge
+```
+
+Step 3: a network with its own LAN addresses, for a router or firewall to filter. `--ip-range` is a slice of your LAN that your DHCP server does not hand out (`192.168.1.192/28` is an example). Over a wired interface use macvlan:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh setup macvlan --ip-range 192.168.1.192/28
+```
+
+macvlan does not work over Wi-Fi; ipvlan does:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh setup ipvlan --ip-range 192.168.1.192/28
+```
+
+Each prints the `CS_DOCKER_FLAGS` line to put in `.envrc-cs`. Then check from a throwaway container that a LAN host is blocked (bridge only; with macvlan or ipvlan the router decides), DNS works and the internet is reachable. Pass your router's address, or leave it out to test the default gateway:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh check 192.168.1.1
+```
+
+To see what is set up, or to undo it:
+
+```bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh status
+```
+
+```bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh remove
+```
+
+`--name`, `--subnet`, `--gateway`, `--parent`, `--resolver` and `--mode l2|l3` override what it detects; `--yes` skips the confirmation. The bridge rules do not survive a reboot (the docker network does), so run `setup bridge` again after one. Traffic to the host's own addresses does not pass `DOCKER-USER`, so the bridge rules do not close ports the host itself listens on. Docker Desktop (macOS, Windows) cannot do any of this.
 
 ### 4. A filtering resolver
 
