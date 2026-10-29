@@ -13,6 +13,8 @@ init.sh [--yes | --no]   (asks as it goes; --yes or --no answers the yes/no ques
   - creates .claude/sandbox/{build,run,start}.sh and plugin.sh stubs (existing files are kept)
   - walks you through a single-repo fine-grained token, validates it, and writes
     CS_GITHUB_TOKEN to .env (mode 600, git-excluded); CS_ENV_FILE overrides the file
+  - works with GitHub Enterprise: the host comes from the origin remote, or from
+    CS_GITHUB_HOST in the environment or .env (written to .env as CS_GITHUB_HOST)
   - adds CS_USER_CONFIG_REPO (pre-filled) and CS_USER_CONFIG_TOKEN to .env, commented out
   - optionally stores a package-only ghcr.io login in ~/.docker-sandbox
   - optionally creates a "main" branch ruleset (needs gh)
@@ -77,7 +79,25 @@ ask_def() {
 # Prints "HTTP_CODE" on the first line, then response headers, a blank line, and the body.
 gh_get() {
     curl -sS -i --config <(printf 'header = "Authorization: Bearer %s"\n' "$1") \
-        -H "Accept: application/vnd.github+json" "https://api.github.com$2" | tr -d '\r'
+        -H "Accept: application/vnd.github+json" "$(api_base "$GITHUB_HOST")$2" | tr -d '\r'
+}
+
+# The REST API of a GitHub host: api.github.com; https://api.TENANT.ghe.com for Enterprise
+# Cloud with data residency; https://HOST/api/v3 for Enterprise Server.
+api_base() {
+    case "$1" in
+        github.com) echo https://api.github.com ;;
+        *.ghe.com) echo "https://api.$1" ;;
+        *) echo "https://$1/api/v3" ;;
+    esac
+}
+
+# parse_remote URL -- prints "HOST PATH" for the https, ssh:// and scp-style (git@host:path) remotes.
+parse_remote() {
+    printf '%s\n' "$1" | sed -E \
+        -e 's#^(https?|ssh)://([^@/]*@)?([^/:]+)(:[0-9]+)?/(.*)$#\3 \5#' \
+        -e 't' \
+        -e 's#^([^@/:]+@)?([^/:]+):([^/].*)$#\2 \3#'
 }
 
 # Checks a fine-grained token against $REPO. Prints the problem and returns 1 if it
@@ -98,7 +118,7 @@ token_problem() {
     [ "$(printf '%s\n' "$A" | http_code)" = 200 ] && { echo "token has the Administration permission; remove it"; return 1; }
     # The receive-pack advertisement is refused unless the token may push.
     P=$(curl -s -o /dev/null -w '%{http_code}' --config <(printf 'user = "x-access-token:%s"\n' "$1") \
-        "https://github.com/$REPO.git/info/refs?service=git-receive-pack")
+        "https://$GITHUB_HOST/$REPO.git/info/refs?service=git-receive-pack")
     [ "$P" = 200 ] || { echo "token cannot push to $REPO (HTTP $P); give it Contents: read/write"; return 1; }
     return 0
 }
@@ -138,13 +158,22 @@ else
     note "other systems: https://cli.github.com"
 fi
 
-REPO=$(git remote get-url origin 2>/dev/null | sed -E 's#^(git@github.com:|https://github.com/)##; s#\.git$##') || true
+# The host and repo come from the origin remote. CS_GITHUB_HOST (environment, else .env)
+# overrides the host, for a remote that goes through an alias.
+REMOTE_PARTS=$(parse_remote "$(git remote get-url origin 2>/dev/null || true)")
+REMOTE_HOST=${REMOTE_PARTS%% *}
+REPO=""; [ -z "$REMOTE_PARTS" ] || REPO=$(printf '%s' "${REMOTE_PARTS#* }" | sed -E 's#/$##; s#\.git$##')
+GITHUB_HOST="${CS_GITHUB_HOST:-}"
+[ -n "$GITHUB_HOST" ] || { [ -f "$ENV_FILE" ] && GITHUB_HOST=$(grep '^CS_GITHUB_HOST=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true); } || true
+[ -n "$GITHUB_HOST" ] || GITHUB_HOST=${REMOTE_HOST:-github.com}
+[[ "$GITHUB_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || die "not a host name: $GITHUB_HOST"
+export GH_HOST="$GITHUB_HOST"   # gh talks to this host
 if ! [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
     [ -z "$AUTO" ] || die "could not work out the GitHub repo from the origin remote; run init.sh without --$AUTO"
     read -r -p "  GitHub repo (OWNER/NAME): " REPO
     [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "expected OWNER/NAME"
 fi
-ok "repo $REPO"
+ok "repo $REPO on $GITHUB_HOST"
 
 # --- stub templates, rendered to a temp dir so they can be compared ------------
 IMAGE_TAG=$(printf '%s' "${REPO#*/}" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_.\n-' '-')
@@ -427,7 +456,11 @@ REGISTRY_DEFAULT=Y; REGISTRY_NOTE=""
 if grep -qs '"ghcr.io"' "$DOCKER_DIR/config.json"; then
     REGISTRY_DEFAULT=N; REGISTRY_NOTE=" (already stored in $DOCKER_DIR)"
 fi
-ask_def "  Store a package-only ghcr.io login for pushing images?$REGISTRY_NOTE" "$REGISTRY_DEFAULT" 0 && DO_REGISTRY=1
+if [ "$GITHUB_HOST" != github.com ]; then
+    note "no ghcr.io login: $GITHUB_HOST is not github.com (point CS_IMAGE_REPO at your registry instead)"
+else
+    ask_def "  Store a package-only ghcr.io login for pushing images?$REGISTRY_NOTE" "$REGISTRY_DEFAULT" 0 && DO_REGISTRY=1
+fi
 
 HAVE_GH=0; command -v gh >/dev/null && HAVE_GH=1
 RULESET_DEFAULT=Y; RULESET_NOTE=""
@@ -635,7 +668,7 @@ if command -v direnv >/dev/null; then note "to load them:"; cmd "direnv allow"; 
 # --- fine-grained PAT for git and gh -----------------------------------------
 if [ "$DO_TOKEN" = 1 ]; then
     say "Token for $REPO"
-    URL="https://github.com/settings/personal-access-tokens/new?name=cs-${REPO#*/}&description=claude-sandbox&expires_in=90&contents=write&pull_requests=write&issues=write&metadata=read"
+    URL="https://$GITHUB_HOST/settings/personal-access-tokens/new?name=cs-${REPO#*/}&description=claude-sandbox&expires_in=90&contents=write&pull_requests=write&issues=write&metadata=read"
     note "In the browser: Only select repositories -> $REPO. Keep the pre-filled"
     note "permissions (Contents, Pull requests, Issues: RW). No Administration or Workflows."
     note "$URL"
@@ -682,17 +715,20 @@ fi
 # session simply has no user scope), so they go in commented out; the repo is
 # pre-filled with the usual name next to this project's owner.
 say "User-scope settings in $ENV_FILE"
-add_env_setting() {   # NAME VALUE COMMENT
+add_env_setting() {   # NAME VALUE COMMENT [ACTIVE: true to write it uncommented]
     if [ -f "$ENV_FILE" ] && grep -qE "^[[:space:]]*#?[[:space:]]*$1=" "$ENV_FILE"; then
         note "kept    $1"
         return
     fi
+    local prefix="# "; [ "${4:-false}" != true ] || prefix=""
     ( umask 077
       touch "$ENV_FILE"
       cs_block_put "$ENV_FILE" "$(printf '%s\n' "$3" | sed 's/^/# /')
-# $1=$2" )
+${prefix}$1=$2" )
     ok "added   $1"
 }
+add_env_setting CS_GITHUB_HOST "$GITHUB_HOST" "GitHub host for git, gh and the user-config clone in the sandbox: github.com, an Enterprise Server host name,
+or an Enterprise Cloud tenant such as corp.ghe.com. init.sh reads it from the origin remote." "$([ "$GITHUB_HOST" != github.com ] && echo true || echo false)"
 add_env_setting CS_USER_CONFIG_REPO "${REPO%%/*}/claude-user" "Private repo (owner/name) with your user-scope rules and memories, cloned read-only into the sandbox at start.
 Optional: without it the session has no user scope. Set it together with CS_USER_CONFIG_TOKEN."
 add_env_setting CS_USER_CONFIG_TOKEN "" "Fine-grained token with Contents: Read-only on that one repo. It stays in the environment so claude-user-pull can fetch later changes; it cannot push.
@@ -729,7 +765,7 @@ if [ "$DO_REGISTRY" = 1 ]; then
     cmd "CS_DOCKER_CONFIG=$DOCKER_DIR .claude/sandbox/run.sh"
     note "after the first push: package settings -> Manage Actions access -> add $REPO (Write)"
     note "to link the package to the repo, add this to the Dockerfile:"
-    cmd "LABEL org.opencontainers.image.source=\"https://github.com/$REPO\""
+    cmd "LABEL org.opencontainers.image.source=\"https://$GITHUB_HOST/$REPO\""
 fi
 
 # --- branch ruleset ----------------------------------------------------------

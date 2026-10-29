@@ -143,7 +143,7 @@ Add these if you use the feature:
 
 Telemetry goes to `http-intake.logs.us5.datadoghq.com` and `browser-intake-us5-datadoghq.com`. Leave them blocked and set `DISABLE_TELEMETRY=1` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` in `.env` instead.
 
-For `git` and `gh`: `github.com`, `api.github.com`, `codeload.github.com` and `objects.githubusercontent.com`.
+For `git` and `gh`: `github.com`, `api.github.com`, `codeload.github.com` and `objects.githubusercontent.com`. On GitHub Enterprise, allow your `CS_GITHUB_HOST` instead (plus `api.<tenant>.ghe.com` for an Enterprise Cloud tenant), and keep `github.com` and `raw.githubusercontent.com` for the launcher scripts the stubs fetch.
 
 ### Automating steps 1 to 3
 

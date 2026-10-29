@@ -202,7 +202,7 @@ check "...and another run leaves the file unchanged" cmp -s "${ENVF}" "${WORK}/e
 
 printf 'MINE=1\n\n%s\n# banner\n\n# Z.\nCS_USER_CONFIG_TOKEN=x\n\n# A.\nCS_GITHUB_TOKEN=y\n\n%s\ntail=1\n' "${BEGIN}" "${END}" > "${ENVF}"
 run_init "${NO3}"
-check "entries already in the block are kept and put in order" test "$(names "${ENVF}" | tr '\n' ' ')" = "MINE CS_GITHUB_TOKEN CS_USER_CONFIG_REPO CS_USER_CONFIG_TOKEN "
+check "entries already in the block are kept and put in order" test "$(names "${ENVF}" | tr '\n' ' ')" = "MINE CS_GITHUB_HOST CS_GITHUB_TOKEN CS_USER_CONFIG_REPO CS_USER_CONFIG_TOKEN "
 check "...with the lines around the block untouched" test "$(head -n 1 "${ENVF}")" = "MINE=1" -a "$(tail -n 1 "${ENVF}")" = "tail=1"
 check "...and a value in the block kept" contains "${ENVF}" 'CS_USER_CONFIG_TOKEN=x'
 
@@ -231,6 +231,57 @@ check "explicit arguments replace the old ones" contains "${RS}/log" 'start --re
 check "--no-push goes to the build only, and the old claude arguments are still reused" test "$(tr '\n' '|' < "${RS}/log")" = "build --no-push|stop cs-demo-app|start --continue two words|"
 : > "${RS}/log"; restart --no-push --resume
 check "--no-push with claude arguments builds without pushing and starts with them" test "$(tr '\n' '|' < "${RS}/log")" = "build --no-push|stop cs-demo-app|start --resume|"
+
+# --- GitHub Enterprise hosts --------------------------------------------------
+RCURL="${WORK}/curl.log"
+api_base() { bash -c 'source <(sed -n "/^api_base() {/,/^}/p" "$1"); api_base "$2"' _ "${ROOT}/init.sh" "$1"; }
+check "api.github.com for github.com" test "$(api_base github.com)" = https://api.github.com
+check "api.TENANT.ghe.com for a data-residency tenant" test "$(api_base corp.ghe.com)" = https://api.corp.ghe.com
+check "HOST/api/v3 for Enterprise Server" test "$(api_base git.corp.example)" = https://git.corp.example/api/v3
+
+ghe_project() {   # REMOTE
+    new_project
+    git -C "${WORK}/proj" remote set-url origin "$1"
+}
+for remote in git@git.corp.example:o/Demo-App.git https://git.corp.example/o/Demo-App.git ssh://git@git.corp.example:2222/o/Demo-App.git; do
+    ghe_project "${remote}"
+    run_init 'n\nn\n'; rc=$?
+    check "${remote}: runs to the end" test "${rc}" -eq 0
+    check "${remote}: finds the repo on the Enterprise host" mentions "repo o/Demo-App on git.corp.example"
+    check "${remote}: writes the host to the env file, uncommented" contains "${WORK}/proj/.env" $'\nCS_GITHUB_HOST=git.corp.example'
+    check "${remote}: has no ghcr.io question" lacks "ghcr.io login for pushing"
+done
+ghe_project git@git.corp.example:o/Demo-App.git
+run_init 'y\nn\n\n\n'
+check "the token page is the Enterprise host's" mentions "https://git.corp.example/settings/personal-access-tokens/new"
+# A curl that logs its URLs and answers like a repo the token can read and push to, without Administration.
+cat > "${BIN}/curl" <<EOS
+#!/bin/bash
+echo "\$@" >> "${RCURL}"
+case "\$*" in
+    *actions/permissions*) printf 'HTTP/2 404\r\n\r\n{}' ;;
+    *info/refs*) printf 200 ;;
+    *api*) printf 'HTTP/2 200\r\n\r\n[]' ;;
+esac
+EOS
+chmod +x "${BIN}/curl"
+for remote in "git@git.corp.example:o/Demo-App.git|https://git.corp.example/api/v3/repos/o/Demo-App" "git@corp.ghe.com:o/Demo-App.git|https://api.corp.ghe.com/repos/o/Demo-App"; do
+    ghe_project "${remote%%|*}"; : > "${RCURL}"
+    run_init 'y\nn\n\ngithub_pat_x\n'
+    check "${remote%%|*}: the token is checked against ${remote##*|}" contains "${RCURL}" "${remote##*|}"
+    check "${remote%%|*}: push access is probed on the Enterprise host" contains "${RCURL}" "https://$(printf '%s' "${remote%%|*}" | sed -E 's#^git@([^:]+):.*#\1#')/o/Demo-App.git/info/refs"
+done
+printf '#!/bin/sh\nexit 0\n' > "${BIN}/curl"
+
+new_project
+run_init "${NO3}"
+check "github.com: the host is documented but left commented out" contains "${WORK}/proj/.env" '# CS_GITHUB_HOST=github.com'
+check "github.com: the ghcr.io question is still asked" mentions "ghcr.io login for pushing"
+
+ghe_project git@github.com:o/Demo-App.git
+printf '# x\nCS_GITHUB_HOST=git.corp.example\n' > "${WORK}/proj/.env"
+run_init 'y\nn\n\n\n'
+check "CS_GITHUB_HOST in .env overrides the remote's host" mentions "https://git.corp.example/settings/personal-access-tokens/new"
 
 # --- --yes and --no ----------------------------------------------------------
 edited_project
