@@ -72,7 +72,78 @@ Container traffic leaves the host under the host's address, so a router rule can
 docker network create -d macvlan --subnet 192.168.1.0/24 --gateway 192.168.1.1 -o parent=eth0 claude-sandbox
 ```
 
-A macvlan container and its host cannot reach each other without extra setup. A router or firewall that filters by hostname (OPNsense, pfSense or OpenWrt aliases, or per-client DNS filtering in Pi-hole or AdGuard Home) can then allow `github.com`, `api.github.com`, `api.anthropic.com` and your package registries, and block the rest.
+A macvlan container and its host cannot reach each other without extra setup. A router or firewall that filters by hostname (OPNsense, pfSense or OpenWrt aliases, or per-client DNS filtering in Pi-hole or AdGuard Home) can then allow the hosts in [the allowed-host list](#hosts-the-sandbox-needs) and block the rest.
+
+A macvlan on the LAN's own subnet does not isolate the sandbox from the LAN: traffic to other devices on that subnet goes through the switch, not the router, so no router rule sees it. Give the sandbox its own VLAN instead; the next section walks through one on UniFi.
+
+#### Worked example: a VLAN and a UniFi gateway
+
+This setup was verified from inside a sandbox. The sandbox could not reach the router's admin ports, the NAS or other LAN devices, or any internet host outside the allow-list.
+
+1. **Create an isolated network.** In UniFi, add a network with its own VLAN ID (here `6`, `10.0.6.0/24`), the "isolated" option on, and no DHCP.
+2. **Tag the VLAN to the NAS port.** In the switch's Port Manager, keep the port's Native VLAN as the LAN the NAS is on, set Tagged VLAN Management to Custom and tick the new VLAN. The NAS itself does not move; only the sandbox traffic is tagged.
+3. **Create the docker network on the tagged sub-interface.** Docker creates `eth0.6` itself. `--ip-range` is a small block inside the VLAN (here `10.0.6.16/28`), which is what the rules below name. The kernel needs macvlan and 802.1q support; ipvlan is not available on every NAS kernel (Synology's 4.4 has none).
+
+   ```bash
+   bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh setup macvlan --parent eth0.6 --subnet 10.0.6.0/24 --gateway 10.0.6.1 --ip-range 10.0.6.16/28
+   ```
+
+4. **Launch on it, resolving through the gateway.** The gateway builds its domain-to-address table from the DNS answers it sees, so the sandbox's queries must go through it. In `.envrc-cs`:
+
+   ```bash
+   export CS_DOCKER_FLAGS="--network claude-sandbox --dns 10.0.6.1"
+   ```
+
+5. **Write the UniFi rules,** for the source `10.0.6.16/28`, in this order:
+   - Allow DNS to the gateway (`10.0.6.1`, port 53).
+   - Under Traffic & Firewall Rules, **Simple** (not Advanced, which has no domain destinations), allow the domains in [the list below](#hosts-the-sandbox-needs).
+   - Drop everything else to the internet.
+   - A separate rule for traffic to the gateway itself (LAN Local) that drops all of it except DNS. The internet rules do not cover this: without it the router's ssh and web UI answer.
+
+6. **Verify from inside the sandbox.** Run these and expect the results in brackets; replace the NAS and device addresses with yours:
+
+   ```bash
+   for u in https://github.com https://api.anthropic.com https://platform.claude.com https://example.com; do printf '%s ' "$u"; curl -s -o /dev/null -m 6 -w '%{http_code}\n' "$u" || echo blocked; done
+   ```
+
+   (the first three answer, `example.com` is blocked)
+
+   ```bash
+   for h in 10.0.1.1 10.0.6.1; do for p in 22 53 80 443; do timeout 3 bash -c "echo > /dev/tcp/$h/$p" 2>/dev/null && echo "$h:$p OPEN"; done; done
+   ```
+
+   (only port 53 is open)
+
+   ```bash
+   for h in 10.0.1.3 10.0.1.48; do for p in 22 80 445 5000 5001; do timeout 3 bash -c "echo > /dev/tcp/$h/$p" 2>/dev/null && echo "$h:$p OPEN"; done; done
+   ```
+
+   (nothing opens: the connections time out because the packets are dropped)
+
+   Only TCP was probed. The rules are expected to cover UDP too, but that is untested.
+
+#### Hosts the sandbox needs
+
+From [Anthropic's network requirements](https://code.claude.com/docs/en/network-config) for Claude Code, plus what `git` and `gh` use. Match each host exactly; a rule that treats a bare domain as covering its subdomains makes a wildcard of it.
+
+Claude Code needs these to run and sign in:
+
+- `api.anthropic.com`
+- `claude.ai`
+- `platform.claude.com` (OAuth token exchange and refresh for every sign-in; without it Claude Code stops authenticating)
+
+Add these if you use the feature:
+
+- `sso.claude.com` (sign-in through single sign-on)
+- `mcp-proxy.anthropic.com` (MCP connectors from claude.ai; `ENABLE_CLAUDEAI_MCP_SERVERS=false` turns them off)
+- `registry.npmjs.org` (plugin installs, `npx` MCP servers)
+- `downloads.claude.ai` and `storage.googleapis.com` (plugin downloads and metadata)
+- `raw.githubusercontent.com` (the `/release-notes` changelog)
+- `code.claude.com` (documentation lookups)
+
+Telemetry goes to `http-intake.logs.us5.datadoghq.com` and `browser-intake-us5-datadoghq.com`. Leave them blocked and set `DISABLE_TELEMETRY=1` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` in `.env` instead.
+
+For `git` and `gh`: `github.com`, `api.github.com`, `codeload.github.com` and `objects.githubusercontent.com`.
 
 ### Automating steps 1 to 3
 
