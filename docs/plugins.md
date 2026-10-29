@@ -30,7 +30,7 @@ The examples below call `build-image.sh` directly to show its environment variab
 
 ### Build settings
 
-`build-image.sh` reads these from the environment, so the stubs pick up the ones in `.envrc-cs` (each is documented there): `CS_IMAGE_REPO`, `CS_IMAGE_TAG`, `LANGUAGE_VERSIONS` (`"go-1.25.10"`-style pins) and `CLAUDE_VERSION`. `PLUGINS` (a built-in plugin name, local path or URL) is set by `build.sh` to `plugin.sh`; set it yourself when calling `build-image.sh` directly.
+`build-image.sh` reads these from the environment, so the stubs pick up the ones in `.envrc-cs` (each is documented there): `CS_IMAGE_REPO`, `CS_IMAGE_TAG`, `CS_LANGUAGE_VERSIONS` (`"go-1.25.10"`-style pins) and `CLAUDE_VERSION`. `PLUGINS` (a built-in plugin name, local path or URL) is set by `build.sh` to `plugin.sh`; set it yourself when calling `build-image.sh` directly.
 
 A built-in language plugin:
 
@@ -41,7 +41,7 @@ PLUGINS=python3 CS_IMAGE_TAG=my-python /bin/bash -c "$(curl -fsSL https://raw.gi
 A built-in plugin with a version pin:
 
 ```bash
-PLUGINS=go LANGUAGE_VERSIONS="go-1.24.0" CS_IMAGE_TAG=go-1.24 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+PLUGINS=go CS_LANGUAGE_VERSIONS="go-1.24.0" CS_IMAGE_TAG=go-1.24 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
 ```
 
 A local custom plugin script:
@@ -107,7 +107,7 @@ needed. Browser revisions are tied to the Playwright version, so pin it to match
 dependency:
 
 ```bash
-PLUGINS=playwright LANGUAGE_VERSIONS="playwright-1.55.0" CS_IMAGE_TAG=my-playwright ./build-image.sh
+PLUGINS=playwright CS_LANGUAGE_VERSIONS="playwright-1.55.0" CS_IMAGE_TAG=my-playwright ./build-image.sh
 ```
 
 ### Using a single plugin
@@ -128,21 +128,21 @@ PLUGINS=plugins/languages/go.sh CS_IMAGE_TAG=my-tag make image
 
 ### Pinning a language version
 
-Pass `LANGUAGE_VERSIONS` as a space-separated list of `<language>-<version>` entries. Each plugin extracts only its own entry:
+Pass `CS_LANGUAGE_VERSIONS` as a space-separated list of `<language>-<version>` entries. Each plugin extracts only its own entry:
 
 With no repo checkout:
 
 ```bash
-PLUGINS=go LANGUAGE_VERSIONS="go-1.25.10" CS_IMAGE_TAG=go-1.25.10 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+PLUGINS=go CS_LANGUAGE_VERSIONS="go-1.25.10" CS_IMAGE_TAG=go-1.25.10 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
 ```
 
 With a local repo checkout:
 
 ```bash
-PLUGINS=plugins/languages/go.sh CS_IMAGE_TAG=go-1.25.10 LANGUAGE_VERSIONS="go-1.25.10" make image
+PLUGINS=plugins/languages/go.sh CS_IMAGE_TAG=go-1.25.10 CS_LANGUAGE_VERSIONS="go-1.25.10" make image
 ```
 
-When a plugin's entry is absent from `LANGUAGE_VERSIONS`, it installs the latest stable version.
+When a plugin's entry is absent from `CS_LANGUAGE_VERSIONS`, it installs the latest stable version.
 
 Notes:
 - **cpp**: version refers to the clang major version installed from the [LLVM apt repo](https://apt.llvm.org)
@@ -209,11 +209,11 @@ Or with a local repo checkout:
 PLUGINS=./go-react.sh CS_IMAGE_TAG=go-react make image
 ```
 
-Each sourced plugin respects `LANGUAGE_VERSIONS`, so you can still pin versions:
+Each sourced plugin respects `CS_LANGUAGE_VERSIONS`, so you can still pin versions:
 
 ```bash
 PLUGINS=./go-react.sh CS_IMAGE_TAG=go-react \
-  LANGUAGE_VERSIONS="go-1.25.10" /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+  CS_LANGUAGE_VERSIONS="go-1.25.10" /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
 ```
 
 ### Runtime plugins

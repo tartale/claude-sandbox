@@ -634,25 +634,25 @@ add_setting() {   # NAME VALUE ACTIVE(1|0) COMMENT
     cs_file_put "$CS_RC" "$entry"
     ok "added   $1"
 }
-add_setting CS_IMAGE_REPO ghcr.io/tartale/claude-sandbox 1 "Image repository, including registry host and namespace. build.sh and the launcher must use the same value."
-add_setting CS_IMAGE_TAG "$IMAGE_TAG" 1 "Tag of this project's sandbox image: build.sh pushes it, run.sh and start.sh use it."
-add_setting CS_ENV_FILE "$ENV_FILE" 1 "Env file passed into the container (docker --env-file). It is read as data and never run as shell."
+add_setting CLAUDE_VERSION "" 0 "build.sh: Claude Code version baked into the image. Default: latest."
+add_setting CS_CONTAINER_NAME "" 0 "Container name. Default: cs-<repo-name> (run.sh appends -2, -3... while one is running); claude-sandbox.sh on its own adds a random suffix."
 add_setting CS_DOCKER_CONFIG "$DOCKER_DIR" 0 "A docker config directory; its config.json (registry logins) is mounted read-only so the container's docker CLI can use them.
 Off by default: anything in the container can read the credentials. Logins held in a credential helper (credsStore, e.g. macOS Keychain) are not available."
 add_setting CS_DOCKER_FLAGS "" 0 "Extra docker run flags, as one string, e.g. \"-v /host/path:/container/path\".
 --add-host works as in docker, including host-gateway. The container's /etc/hosts is docker's own, minus IPv6 localhost, so the host's hosts entries do not carry over.
 A --restart here replaces start.sh's --restart=unless-stopped."
-add_setting CS_PIDS_LIMIT "" 0 "Maximum number of processes in the container (docker run --pids-limit). Unset means no limit."
+add_setting CS_ENV_FILE "$ENV_FILE" 1 "Env file passed into the container (docker --env-file). It is read as data and never run as shell."
+add_setting CS_IMAGE_REPO ghcr.io/tartale/claude-sandbox 1 "Image repository, including registry host and namespace. build.sh and the launcher must use the same value."
+add_setting CS_IMAGE_TAG "$IMAGE_TAG" 1 "Tag of this project's sandbox image: build.sh pushes it, run.sh and start.sh use it."
+add_setting CS_LANGUAGE_VERSIONS "" 0 "build.sh: language version pins, space-separated <language>-<version>, e.g. \"go-1.25.10\". A plugin with no entry here installs the latest stable."
 add_setting CS_MEMORY "" 0 "Memory limit for the container (docker run --memory), e.g. 8g. Unset means no limit."
-add_setting CS_CONTAINER_NAME "" 0 "Container name. Default: cs-<repo-name> (run.sh appends -2, -3... while one is running); claude-sandbox.sh on its own adds a random suffix."
+add_setting CS_NPMRC "" 0 "build.sh: path to an npmrc file holding the registry's credentials, e.g. //registry.example.com/:_authToken=... .
+It is mounted as a build secret, so it does not end up in the image or its history. Needs BuildKit."
+add_setting CS_NPM_REGISTRY "" 0 "build.sh: npm registry URL for the image build (Claude Code and the plugins' npm packages). Default: https://registry.npmjs.org/."
+add_setting CS_PIDS_LIMIT "" 0 "Maximum number of processes in the container (docker run --pids-limit). Unset means no limit."
 add_setting CS_REF "" 0 "Launcher version: a commit, tag or branch of tartale/claude-sandbox. Overrides the commit init.sh pinned in .claude/sandbox/ref.
 Set to latest to follow main with no pin; init.sh then writes none and removes an existing one."
 add_setting CS_USER_CONFIG_CHECKOUT "\$HOME/.claude-user" 0 "Your own checkout of the user config repo on the host, where sync.sh applies the sandbox's patch. The launcher does not read it."
-add_setting CS_NPM_REGISTRY "" 0 "build.sh: npm registry URL for the image build (Claude Code and the plugins' npm packages). Default: https://registry.npmjs.org/."
-add_setting CS_NPMRC "" 0 "build.sh: path to an npmrc file holding the registry's credentials, e.g. //registry.example.com/:_authToken=... .
-It is mounted as a build secret, so it does not end up in the image or its history. Needs BuildKit."
-add_setting LANGUAGE_VERSIONS "" 0 "build.sh: language version pins, space-separated <language>-<version>, e.g. \"go-1.25.10\". A plugin with no entry here installs the latest stable."
-add_setting CLAUDE_VERSION "" 0 "build.sh: Claude Code version baked into the image. Default: latest."
 cs_file_put "$CS_RC" ""   # sorts what is there, so a file edited by hand is put back in order
 if ! grep -qE '^[[:space:]]*source_env[[:space:]]+(\./)?\.envrc-cs[[:space:]]*$' .envrc 2>/dev/null; then
     [ -s .envrc ] && echo >> .envrc

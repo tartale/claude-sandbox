@@ -51,7 +51,7 @@ COPY claude-settings.json /usr/local/share/claude-sandbox/settings.json
 RUN chmod +x /usr/local/bin/install-plugins.sh /usr/local/bin/entrypoint.sh \
              /usr/local/bin/setup-scopes.sh /usr/local/bin/claude-user-sync /usr/local/bin/claude-user-pull
 
-ARG LANGUAGE_VERSIONS=""
+ARG CS_LANGUAGE_VERSIONS=""
 ARG PLUGINS=""
 RUN --mount=type=bind,target=/build \
     --mount=type=secret,id=npmrc,target=/root/.npmrc \
