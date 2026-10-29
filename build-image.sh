@@ -4,6 +4,15 @@ set -euo pipefail
 REPO="tartale/claude-sandbox"
 REF="${CS_REF:-main}"   # a commit, tag or branch of ${REPO}
 
+PUSH=true
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --no-push) PUSH=false ;;
+        *) echo "usage: build-image.sh [--no-push]" >&2; exit 2 ;;
+    esac
+    shift
+done
+
 CS_IMAGE_TAG="${CS_IMAGE_TAG:-custom}"
 CS_IMAGE_REPO="${CS_IMAGE_REPO:-ghcr.io/tartale/claude-sandbox}"
 CS_IMAGE="${CS_IMAGE_REPO}:${CS_IMAGE_TAG}"
@@ -75,6 +84,10 @@ BUILD_ARGS=(
 
 echo "Building ${CS_IMAGE}..."
 docker build "${BUILD_ARGS[@]}" "$BUILD_DIR"
-echo "Pushing ${CS_IMAGE}..."
-docker push "$CS_IMAGE"
-echo "Done. Image pushed: ${CS_IMAGE}"
+if [ "$PUSH" = true ]; then
+    echo "Pushing ${CS_IMAGE}..."
+    docker push "$CS_IMAGE"
+    echo "Done. Image pushed: ${CS_IMAGE}"
+else
+    echo "Done. Image built, not pushed: ${CS_IMAGE}"
+fi

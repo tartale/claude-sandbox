@@ -8,7 +8,13 @@ Put the project's plugins in `.claude/sandbox/plugin.sh`, then build:
 .claude/sandbox/build.sh
 ```
 
-It builds the project image and pushes it to `CS_IMAGE_REPO:CS_IMAGE_TAG`; `run.sh` and `start.sh` use the same tag. The stub wraps the `build-image.sh` one-liner, which also works on its own, with no repo checkout:
+It builds the project image and pushes it to `CS_IMAGE_REPO:CS_IMAGE_TAG`; `run.sh` and `start.sh` use the same tag. `--no-push` builds without pushing, for an image only this machine uses (`build-image.sh` takes it too):
+
+```bash
+.claude/sandbox/build.sh --no-push
+```
+
+ The stub wraps the `build-image.sh` one-liner, which also works on its own, with no repo checkout:
 
 ```bash
 CS_IMAGE_TAG=my-sandbox /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"

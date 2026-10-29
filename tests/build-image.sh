@@ -39,6 +39,8 @@ logged() { grep -qF -- "$1" "${LOG}"; }
 not_logged() { ! logged "$1"; }
 
 build() { : > "${LOG}"; OUT=$(env -i PATH="${BIN}" HOME="${WORK}" "$@" bash "${ROOT}/build-image.sh" 2>&1); OUT+=$'\n'$(cat "${LOG}"); }
+# build_args ARGS... -- run build-image.sh with command-line arguments.
+build_args() { : > "${LOG}"; OUT=$(env -i PATH="${BIN}" HOME="${WORK}" bash "${ROOT}/build-image.sh" "$@" 2>&1); OUT+=$'\n'$(cat "${LOG}"); }
 
 build
 check "defaults to the public npm registry" logged "--build-arg NPM_REGISTRY=https://registry.npmjs.org/"
@@ -51,6 +53,15 @@ check "passes the chosen registry to the build" logged "--build-arg NPM_REGISTRY
 check "looks the version up in the chosen registry" logged "npm view --registry https://reg.example.com/"
 check "mounts the npmrc as a secret" logged "secret-content: //reg.example.com/:_authToken=abc"
 check "the credentials are not on the docker command line" test "$(grep '^docker build' "${LOG}" | grep -c abc)" -eq 0
+
+build
+check "pushes by default" logged "docker push"
+build_args --no-push
+check "--no-push builds" logged "docker build"
+check "...and does not push" not_logged "docker push"
+check "...and says it did not" grep -qF "not pushed" <<<"${OUT}"
+build_args --bogus
+check "an unknown option is an error" grep -qF "usage: build-image.sh" <<<"${OUT}"
 
 build CS_NPMRC="${WORK}/missing"
 check "a missing CS_NPMRC is an error" grep -qF "CS_NPMRC is not a file" <<<"${OUT}"

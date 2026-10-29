@@ -69,6 +69,7 @@ for s in ${STUBS}; do check "creates ${s}" has_file "${SB}/${s}"; done
 for s in build.sh run.sh start.sh restart.sh sync.sh; do check "${s} is executable" mode_is "${SB}/${s}" 755; done
 check "plugin.sh is not executable" mode_is "${SB}/plugin.sh" 644
 check "stubs use the repo name as the image tag" contains "${SB}/build.sh" 'demo-app'
+check "build.sh passes its arguments on to build-image.sh" contains "${SB}/build.sh" 'build-image.sh)" build-image "$@"'
 check "records the stub hashes" has_file "${SB}/.init-hashes"
 for s in ${STUBS}; do check "keeps a copy of the ${s} template" has_file "${SB}/.init-base/${s}"; done
 
@@ -217,7 +218,7 @@ run_init "${NO3}"
 RS="${WORK}/restart"
 mkdir -p "${RS}/.claude/sandbox" "${RS}/bin"
 cp "${SB}/restart.sh" "${RS}/.claude/sandbox/restart.sh"
-printf '#!/bin/sh\necho "build" >> "%s/log"\n' "${RS}" > "${RS}/.claude/sandbox/build.sh"
+printf '#!/bin/sh\necho "build${*:+ $*}" >> "%s/log"\n' "${RS}" > "${RS}/.claude/sandbox/build.sh"
 printf '#!/bin/sh\necho "start $*" >> "%s/log"\n' "${RS}" > "${RS}/.claude/sandbox/start.sh"
 printf '#!/bin/sh\ncase "$1" in\n  inspect) printf "%%s\\n" --name demo-app --continue "two words"; echo ;;\n  stop) echo "stop $2" >> "%s/log" ;;\nesac\n' "${RS}" > "${RS}/bin/docker"
 chmod +x "${RS}"/.claude/sandbox/*.sh "${RS}/bin/docker"
@@ -226,6 +227,10 @@ restart() { OUT=$(env -i PATH="${RS}/bin:${BIN}" bash "${RS}/.claude/sandbox/res
 check "restart builds, stops, then starts" test "$(tr '\n' '|' < "${RS}/log")" = "build|stop cs-demo-app|start --continue two words|"
 : > "${RS}/log"; restart --resume
 check "explicit arguments replace the old ones" contains "${RS}/log" 'start --resume'
+: > "${RS}/log"; restart --no-push
+check "--no-push goes to the build only, and the old claude arguments are still reused" test "$(tr '\n' '|' < "${RS}/log")" = "build --no-push|stop cs-demo-app|start --continue two words|"
+: > "${RS}/log"; restart --no-push --resume
+check "--no-push with claude arguments builds without pushing and starts with them" test "$(tr '\n' '|' < "${RS}/log")" = "build --no-push|stop cs-demo-app|start --resume|"
 
 # --- --yes and --no ----------------------------------------------------------
 edited_project

@@ -165,7 +165,8 @@ can_merge() { [ -f "$STUB_OUT/.init-base/$1" ] && [ "$(recorded_field "$1" 3)" =
 recorded_field() { awk -v n="$1" -v f="$2" '$1 == n { print $f }' "$STUB_OUT/.init-hashes" 2>/dev/null | head -n 1; }
 render_stub build.sh <<'EOF2'
 #!/usr/bin/env bash
-# Builds this project's sandbox image from plugin.sh. Usage: .claude/sandbox/build.sh
+# Builds this project's sandbox image from plugin.sh and pushes it.
+# Usage: .claude/sandbox/build.sh [--no-push]
 # Then start it with run.sh or start.sh in this directory.
 set -euo pipefail
 
@@ -179,7 +180,7 @@ export CS_REF="${CS_REF:-$(cat "${THIS_SCRIPT_DIR}/ref" 2>/dev/null || echo main
 export PLUGINS="${THIS_SCRIPT_DIR}/plugin.sh"
 export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
 
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/${CS_REF}/build-image.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/${CS_REF}/build-image.sh)" build-image "$@"
 EOF2
 render_stub run.sh <<'EOF2'
 #!/usr/bin/env bash
@@ -245,12 +246,16 @@ EOF2
 render_stub restart.sh <<'EOF2'
 #!/usr/bin/env bash
 # Rebuilds the image, stops this project's container and starts it again in the
-# background. Usage: .claude/sandbox/restart.sh [claude args]
-# Without arguments it reuses the claude arguments of the container it replaces.
+# background. Usage: .claude/sandbox/restart.sh [--no-push] [claude args]
+# Without claude arguments it reuses those of the container it replaces. --no-push
+# builds the image without pushing it.
 set -euo pipefail
 
 THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAME="${CS_CONTAINER_NAME:-cs-@TAG@}"
+
+BUILD_ARGS=()
+if [ "${1:-}" = --no-push ]; then BUILD_ARGS=(--no-push); shift; fi
 
 if [ "$#" -eq 0 ]; then
     # start.sh adds --name itself, so the recovered one is dropped. docker inspect ends
@@ -263,7 +268,7 @@ if [ "$#" -eq 0 ]; then
     done < <(docker inspect -f '{{range .Config.Cmd}}{{println .}}{{end}}' "$NAME" 2>/dev/null || true)
 fi
 
-"${THIS_SCRIPT_DIR}/build.sh"
+"${THIS_SCRIPT_DIR}/build.sh" ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"}
 docker stop "$NAME" >/dev/null 2>&1 || true
 exec "${THIS_SCRIPT_DIR}/start.sh" "$@"
 EOF2

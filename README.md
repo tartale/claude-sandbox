@@ -73,6 +73,12 @@ Rebuild the image, stop the container and start it again:
 .claude/sandbox/restart.sh
 ```
 
+`build.sh` and `restart.sh` push the image to `CS_IMAGE_REPO`. To build it for this machine only, pass `--no-push` (first, for `restart.sh`; the rest still goes to `claude`):
+
+```bash
+.claude/sandbox/restart.sh --no-push
+```
+
 Arguments go to `claude`:
 
 ```bash
