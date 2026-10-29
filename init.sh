@@ -103,10 +103,9 @@ parse_remote() {
 # Checks a fine-grained token against $REPO. Prints the problem and returns 1 if it
 # is unusable; otherwise returns 0.
 token_problem() {
-    local R A P
+    local R A
     case "$1" in
         github_pat_*) ;;
-        ghp_*) echo "that is a classic token, which cannot be limited to one repo. Create a fine-grained one."; return 1 ;;
         *) echo "not a GitHub fine-grained token (expected github_pat_...)"; return 1 ;;
     esac
     # /repos/...permissions describes YOUR role on the repo, not the token's, so
@@ -116,11 +115,30 @@ token_problem() {
     # Reading Actions settings needs the Administration permission.
     A=$(gh_get "$1" "/repos/$REPO/actions/permissions")
     [ "$(printf '%s\n' "$A" | http_code)" = 200 ] && { echo "token has the Administration permission; remove it"; return 1; }
-    # The receive-pack advertisement is refused unless the token may push.
+    push_problem "$1"
+}
+
+# The receive-pack advertisement is refused unless the token may push.
+push_problem() {
+    local P
     P=$(curl -s -o /dev/null -w '%{http_code}' --config <(printf 'user = "x-access-token:%s"\n' "$1") \
         "https://$GITHUB_HOST/$REPO.git/info/refs?service=git-receive-pack")
     [ "$P" = 200 ] || { echo "token cannot push to $REPO (HTTP $P); give it Contents: read/write"; return 1; }
     return 0
+}
+
+# A classic token (ghp_) cannot be limited to one repo or probed for Administration, so the
+# only checks are that it can read and push to $REPO.
+classic_token_problem() {
+    local R
+    R=$(gh_get "$1" "/repos/$REPO")
+    [ "$(printf '%s\n' "$R" | http_code)" = 200 ] || { echo "token cannot read $REPO"; return 1; }
+    push_problem "$1"
+}
+
+# Prints the scopes a classic token carries, from the X-OAuth-Scopes header of any API call.
+classic_scopes() {
+    gh_get "$1" "/user" | sed -n 's/^[Xx]-[Oo][Aa][Uu][Tt][Hh]-[Ss][Cc][Oo][Pp][Ee][Ss]: *//p' | head -n 1
 }
 
 # Prints how many private repos besides $REPO the token can reach. Every fine-grained
@@ -446,7 +464,11 @@ done
 TOKEN_DEFAULT=Y; TOKEN_NOTE=""
 EXISTING_TOKEN=""
 [ -f "$ENV_FILE" ] && EXISTING_TOKEN=$(grep '^CS_GITHUB_TOKEN=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true)
-if [ -n "$EXISTING_TOKEN" ] && token_problem "$EXISTING_TOKEN" >/dev/null && [ "$(token_other_repos "$EXISTING_TOKEN")" = 0 ]; then
+if [[ "$EXISTING_TOKEN" == ghp_* ]]; then
+    if classic_token_problem "$EXISTING_TOKEN" >/dev/null; then
+        TOKEN_DEFAULT=N; TOKEN_NOTE=" (a classic token is already in $ENV_FILE; it reaches every repo your account can)"
+    fi
+elif [ -n "$EXISTING_TOKEN" ] && token_problem "$EXISTING_TOKEN" >/dev/null && [ "$(token_other_repos "$EXISTING_TOKEN")" = 0 ]; then
     TOKEN_DEFAULT=N; TOKEN_NOTE=" (a valid token is already in $ENV_FILE)"
 fi
 unset EXISTING_TOKEN
@@ -672,6 +694,7 @@ if [ "$DO_TOKEN" = 1 ]; then
     note "In the browser: Only select repositories -> $REPO. Keep the pre-filled"
     note "permissions (Contents, Pull requests, Issues: RW). No Administration or Workflows."
     note "$URL"
+    note "If a fine-grained token cannot be used, a classic token (ghp_) is accepted after a warning."
     read -r -p "  Press Enter to open it (Ctrl-C to stop)... " _
     (command -v open >/dev/null && open "$URL") || (command -v xdg-open >/dev/null && xdg-open "$URL") || warn "could not open a browser; use the link above"
 
@@ -679,22 +702,35 @@ if [ "$DO_TOKEN" = 1 ]; then
     # A terminal in bracketed-paste mode wraps the paste in ESC[200~ ... ESC[201~.
     TOKEN=${TOKEN//$'\e[200~'/}; TOKEN=${TOKEN//$'\e[201~'/}
     if [ -n "$TOKEN" ]; then
-        problem=$(token_problem "$TOKEN") || die "$problem"
-        ok "push access, no Administration"
-        OTHERS=$(token_other_repos "$TOKEN")
-        if [ "$OTHERS" -gt 0 ]; then
-            warn "token can also reach $OTHERS other private repo(s)"
-            ask_def "  Continue anyway?" N || die "recreate the token with only $REPO selected"
+        if [[ "$TOKEN" == ghp_* ]]; then
+            problem=$(classic_token_problem "$TOKEN") || die "$problem"
+            ok "push access"
+            scopes=$(classic_scopes "$TOKEN")
+            warn "classic token: it cannot be limited to one repository, so it reaches every repo your account can"
+            note "scopes: ${scopes:-none reported}"
+            risky=$(printf '%s\n' "$scopes" | tr -d ' ' | tr ',' '\n' | grep -E '^(admin:|delete_repo$|workflow$|delete:packages$)' | paste -sd, - || true)
+            [ -z "$risky" ] || warn "it also carries powerful scopes the agent could use: $risky"
+            ask_def "  Use a classic token anyway?" N || die "create a fine-grained token limited to $REPO instead"
         else
-            ok "no other private repos reachable"
+            problem=$(token_problem "$TOKEN") || die "$problem"
+            ok "push access, no Administration"
+            OTHERS=$(token_other_repos "$TOKEN")
+            if [ "$OTHERS" -gt 0 ]; then
+                warn "token can also reach $OTHERS other private repo(s)"
+                ask_def "  Continue anyway?" N || die "recreate the token with only $REPO selected"
+            else
+                ok "no other private repos reachable"
+            fi
+            note "Workflows permission cannot be probed; confirm it is off."
         fi
-        note "Workflows permission cannot be probed; confirm it is off."
         ( umask 077
           touch "$ENV_FILE"
           tmp=$(mktemp)
-          env_comment="# Fine-grained GitHub token, limited to $REPO (git and gh in the sandbox). Whatever it can do, the agent can do: keep it to Contents, Pull requests and Issues write, with no Administration or Workflows."
+          fine_comment="# Fine-grained GitHub token, limited to $REPO (git and gh in the sandbox). Whatever it can do, the agent can do: keep it to Contents, Pull requests and Issues write, with no Administration or Workflows."
+          classic_comment="# Classic GitHub token (git and gh in the sandbox). It cannot be limited to one repo: it reaches every repo the account can, and whatever it can do, the agent can do."
+          env_comment=$fine_comment; [[ "$TOKEN" != ghp_* ]] || env_comment=$classic_comment
           # Drop any earlier entry and its comment; the new one goes in the claude-sandbox block.
-          { grep -vxF -e "$env_comment" "$ENV_FILE" | grep -v '^CS_GITHUB_TOKEN=' > "$tmp"; } || true
+          { grep -vxF -e "$fine_comment" "$ENV_FILE" | grep -vxF -e "$classic_comment" | grep -v '^CS_GITHUB_TOKEN=' > "$tmp"; } || true
           cat "$tmp" > "$ENV_FILE"; rm -f "$tmp"
           cs_block_put "$ENV_FILE" "$(printf '%s\nCS_GITHUB_TOKEN=%s' "$env_comment" "$TOKEN")" )
         chmod 600 "$ENV_FILE"
@@ -703,7 +739,7 @@ if [ "$DO_TOKEN" = 1 ]; then
             note "added $ENV_FILE to .git/info/exclude"
         fi
         ok "CS_GITHUB_TOKEN saved to $ENV_FILE (mode 600)"
-        unset TOKEN OTHERS
+        unset TOKEN OTHERS scopes risky
     else
         note "no token entered; nothing written"
     fi

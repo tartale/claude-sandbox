@@ -298,8 +298,61 @@ check "--yes skips the token, which needs a pasted secret" lacks "Paste the toke
 
 # A paste wrapped in bracketed-paste markers is judged by the token inside.
 new_project
-run_init 'y\nn\nn\n\n\033[200~ghp_abc\033[201~\n'; rc=$?
-check "bracketed-paste markers are stripped from a pasted token" mentions "that is a classic token"
+run_init 'y\nn\nn\n\n\033[200~github_pat_abc\033[201~\n'; rc=$?
+check "bracketed-paste markers are stripped from a pasted token" mentions "token cannot read"
+
+# --- classic tokens --------------------------------------------------------------
+# A curl that answers as a repo whose token has SCOPES and gets PUSH from the push probe.
+classic_curl() {   # PUSH_CODE SCOPES
+    cat > "${BIN}/curl" <<EOS
+#!/bin/bash
+case "\$*" in
+    *info/refs*) printf '%s' "$1" ;;
+    *api*) printf 'HTTP/2 200\r\nX-OAuth-Scopes: %s\r\n\r\n[]' "$2" ;;
+esac
+EOS
+    chmod +x "${BIN}/curl"
+}
+ENVF="${WORK}/proj/.env"
+classic_curl 200 "repo"
+new_project
+run_init 'y\nn\nn\n\nghp_abc\nn\n'; rc=$?
+check "a classic token is warned about" mentions "reaches every repo your account can"
+check "...with the scopes it carries" mentions "scopes: repo"
+check "...and refused when you decline" test "${rc}" -ne 0
+check "...saying how to do it properly" mentions "create a fine-grained token limited to o/Demo-App"
+no_token_stored() { [ ! -f "${ENVF}" ] || ! grep -qF ghp_abc "${ENVF}"; }
+check "...storing nothing" no_token_stored
+
+new_project
+run_init 'y\nn\nn\n\nghp_abc\ny\n'; rc=$?
+check "a classic token is stored when you accept" test "${rc}" -eq 0
+check "...in the env file" contains "${ENVF}" 'CS_GITHUB_TOKEN=ghp_abc'
+check "...with a comment that says what a classic token is" contains "${ENVF}" '# Classic GitHub token'
+check "...and without the fine-grained comment" absent "${ENVF}" 'Fine-grained GitHub token, limited to'
+check "the env file stays private" mode_is "${ENVF}" 600
+
+classic_curl 200 "repo, workflow, admin:org"
+new_project
+run_init 'y\nn\nn\n\nghp_abc\ny\n'
+check "powerful scopes are called out" mentions "powerful scopes the agent could use: workflow,admin:org"
+
+classic_curl 403 "repo"
+new_project
+run_init 'y\nn\nn\n\nghp_abc\ny\n'; rc=$?
+check "a classic token that cannot push is rejected" mentions "token cannot push to o/Demo-App"
+check "...without asking to continue" lacks "Use a classic token anyway"
+
+classic_curl 200 "repo"
+new_project
+printf 'CS_GITHUB_TOKEN=ghp_abc\n' > "${ENVF}"
+run_init 'n\nn\nn\n'
+check "an existing working classic token is recognised" mentions "a classic token is already in"
+
+new_project
+run_init "" "${ROOT}/init.sh --yes"
+check "--yes still takes no token" lacks "Use a classic token anyway"
+printf '#!/bin/sh\nexit 0\n' > "${BIN}/curl"
 check "--yes does not touch the ruleset without gh" lacks "ruleset created"
 
 edited_project
