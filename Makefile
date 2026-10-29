@@ -4,7 +4,7 @@ REGISTRY = ghcr.io/tartale/claude-sandbox
 
 PLUGINS_STAGED = $(if $(PLUGINS),plugins/.build)
 PLUGINS_ARG = $(if $(PLUGINS),--build-arg PLUGINS=$(PLUGINS_STAGED))
-LANGUAGE_VERSIONS_ARG = $(if $(LANGUAGE_VERSIONS),--build-arg LANGUAGE_VERSIONS=$(LANGUAGE_VERSIONS))
+CS_LANGUAGE_VERSIONS_ARG = $(if $(CS_LANGUAGE_VERSIONS),--build-arg CS_LANGUAGE_VERSIONS=$(CS_LANGUAGE_VERSIONS))
 LANGUAGES = $(patsubst plugins/languages/%.sh,%,$(wildcard plugins/languages/*.sh))
 CLAUDE_VERSION ?= $(shell npm view @anthropic-ai/claude-code version 2>/dev/null || echo latest)
 CLAUDE_VERSION_ARG = --build-arg CLAUDE_VERSION=$(CLAUDE_VERSION)
@@ -23,9 +23,9 @@ image: stage-plugins
 	@if docker buildx inspect multi-platform >/dev/null 2>&1 || \
 	    docker buildx create --driver docker-container --use multi-platform >/dev/null 2>&1; then \
 		docker buildx use multi-platform && \
-		docker buildx build --load -t $(CS_IMAGE) $(PLUGINS_ARG) $(LANGUAGE_VERSIONS_ARG) $(CLAUDE_VERSION_ARG) .; \
+		docker buildx build --load -t $(CS_IMAGE) $(PLUGINS_ARG) $(CS_LANGUAGE_VERSIONS_ARG) $(CLAUDE_VERSION_ARG) .; \
 	else \
-		docker build -t $(CS_IMAGE) $(PLUGINS_ARG) $(LANGUAGE_VERSIONS_ARG) $(CLAUDE_VERSION_ARG) .; \
+		docker build -t $(CS_IMAGE) $(PLUGINS_ARG) $(CS_LANGUAGE_VERSIONS_ARG) $(CLAUDE_VERSION_ARG) .; \
 	fi
 
 pull:
@@ -33,7 +33,7 @@ pull:
 
 push: stage-plugins
 	docker buildx build --platform linux/amd64,linux/arm64 --push \
-	  -t $(CS_IMAGE) -t ghcr.io/tartale/claude-sandbox:latest $(PLUGINS_ARG) $(LANGUAGE_VERSIONS_ARG) $(CLAUDE_VERSION_ARG) .
+	  -t $(CS_IMAGE) -t ghcr.io/tartale/claude-sandbox:latest $(PLUGINS_ARG) $(CS_LANGUAGE_VERSIONS_ARG) $(CLAUDE_VERSION_ARG) .
 
 all: push
 	@for lang in $(LANGUAGES); do \

@@ -17,7 +17,7 @@ CS_IMAGE_TAG="${CS_IMAGE_TAG:-custom}"
 CS_IMAGE_REPO="${CS_IMAGE_REPO:-ghcr.io/tartale/claude-sandbox}"
 CS_IMAGE="${CS_IMAGE_REPO}:${CS_IMAGE_TAG}"
 PLUGINS="${PLUGINS:-}"
-LANGUAGE_VERSIONS="${LANGUAGE_VERSIONS:-}"
+CS_LANGUAGE_VERSIONS="${CS_LANGUAGE_VERSIONS:-}"
 CS_NPM_REGISTRY="${CS_NPM_REGISTRY:-https://registry.npmjs.org/}"
 CS_NPMRC="${CS_NPMRC:-}"   # npmrc file with the registry's credentials, mounted as a build secret
 CLAUDE_VERSION="${CLAUDE_VERSION:-$(npm view --registry "$CS_NPM_REGISTRY" @anthropic-ai/claude-code version 2>/dev/null || echo latest)}"
@@ -80,7 +80,7 @@ BUILD_ARGS=(
     --secret "id=npmrc,src=$CS_NPMRC"
 )
 [ -n "$PLUGINS_ARG" ]        && BUILD_ARGS+=(--build-arg "PLUGINS=$PLUGINS_ARG")
-[ -n "$LANGUAGE_VERSIONS" ]  && BUILD_ARGS+=(--build-arg "LANGUAGE_VERSIONS=$LANGUAGE_VERSIONS")
+[ -n "$CS_LANGUAGE_VERSIONS" ]  && BUILD_ARGS+=(--build-arg "CS_LANGUAGE_VERSIONS=$CS_LANGUAGE_VERSIONS")
 
 echo "Building ${CS_IMAGE}..."
 docker build "${BUILD_ARGS[@]}" "$BUILD_DIR"

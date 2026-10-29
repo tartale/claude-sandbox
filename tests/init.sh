@@ -159,7 +159,12 @@ RC="${WORK}/proj/.envrc-cs"
 names() { grep -oE '^(# )?(export )?[A-Z][A-Z0-9_]*=' "$1" | sed -E 's/^(# )?(export )?//; s/=$//'; }
 check "the settings go in .envrc-cs" contains "${RC}" 'export CS_IMAGE_REPO=ghcr.io/tartale/claude-sandbox'
 check ".envrc-cs comments every variable directly above it" test "$(awk '/^(# )?(export )?[A-Z_]+=/ && prev ~ /^# [A-Za-z-]/ { n++ } { prev = $0 } END { print n + 0 }' "${RC}")" -eq "$(grep -cE '^(# )?(export )?[A-Z_]+=' "${RC}")"
-check ".envrc-cs documents the build and sync variables" test "$(grep -cE '^# export (LANGUAGE_VERSIONS|CLAUDE_VERSION|CS_CONTAINER_NAME|CS_NPM_REGISTRY|CS_NPMRC|CS_REF|CS_USER_CONFIG_CHECKOUT)=' "${RC}")" -eq 7
+# The name is CS_LANGUAGE_VERSIONS everywhere; the bare name is not read or written anywhere.
+check "no file mentions the old LANGUAGE_VERSIONS name" test -z "$(grep -rnE '(^|[^A-Za-z_])LANGUAGE_VERSIONS' "${ROOT}" --exclude-dir=.git --exclude-dir=.tmp --exclude-dir=tests)"
+# The settings init.sh adds are listed in alphabetical (byte) order in its source.
+SETTING_NAMES=$(grep -oE '^add_setting [A-Z_]+' "${ROOT}/init.sh" | cut -d' ' -f2)
+check "init.sh lists the .envrc-cs settings alphabetically" test "${SETTING_NAMES}" = "$(printf '%s\n' "${SETTING_NAMES}" | LC_ALL=C sort)"
+check ".envrc-cs documents the build and sync variables" test "$(grep -cE '^# export (CS_LANGUAGE_VERSIONS|CLAUDE_VERSION|CS_CONTAINER_NAME|CS_NPM_REGISTRY|CS_NPMRC|CS_REF|CS_USER_CONFIG_CHECKOUT)=' "${RC}")" -eq 7
 check ".envrc-cs lists its variables in alphabetical order" test "$(names "${RC}")" = "$(names "${RC}" | LC_ALL=C sort)"
 check ".envrc gets no variables" absent "${WORK}/proj/.envrc" 'CS_IMAGE_REPO'
 check ".envrc loads .envrc-cs" contains "${WORK}/proj/.envrc" 'source_env .envrc-cs'

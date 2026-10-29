@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-JAVA_VERSION=$(echo "${LANGUAGE_VERSIONS:-}" | tr ' ' '\n' | grep '^java-' | head -1 | sed 's/java-//') || true
+JAVA_VERSION=$(echo "${CS_LANGUAGE_VERSIONS:-}" | tr ' ' '\n' | grep '^java-' | head -1 | sed 's/java-//') || true
 JAVA_MAJOR="${JAVA_VERSION%%.*}"
 
 apt-get update

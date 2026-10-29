@@ -4,7 +4,7 @@ set -euo pipefail
 export RUSTUP_HOME=/usr/local/rustup
 export CARGO_HOME=/usr/local/cargo
 
-RUST_VERSION=$(echo "${LANGUAGE_VERSIONS:-}" | tr ' ' '\n' | grep '^rust-' | head -1 | sed 's/rust-//') || true
+RUST_VERSION=$(echo "${CS_LANGUAGE_VERSIONS:-}" | tr ' ' '\n' | grep '^rust-' | head -1 | sed 's/rust-//') || true
 
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
   | sh -s -- -y --no-modify-path --default-toolchain "${RUST_VERSION:-stable}"

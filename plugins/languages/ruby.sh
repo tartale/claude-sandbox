@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RUBY_VERSION=$(echo "${LANGUAGE_VERSIONS:-}" | tr ' ' '\n' | grep '^ruby-' | head -1 | sed 's/ruby-//') || true
+RUBY_VERSION=$(echo "${CS_LANGUAGE_VERSIONS:-}" | tr ' ' '\n' | grep '^ruby-' | head -1 | sed 's/ruby-//') || true
 
 apt-get update
 apt-get install -y \

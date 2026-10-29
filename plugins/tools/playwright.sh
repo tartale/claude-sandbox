@@ -8,7 +8,7 @@ set -euo pipefail
 # Both Chromium and Firefox are installed: Chromium is the default target, but it has been seen to
 # get OOM-killed in this container on heavier pages, and Firefox is the fallback that survives it.
 
-PW_VERSION=$(echo "${LANGUAGE_VERSIONS:-}" | tr ' ' '\n' | grep '^playwright-' | head -1 | sed 's/playwright-//') || true
+PW_VERSION=$(echo "${CS_LANGUAGE_VERSIONS:-}" | tr ' ' '\n' | grep '^playwright-' | head -1 | sed 's/playwright-//') || true
 
 # Browsers go to a shared, world-readable path rather than a user home. The image is built as root
 # but runs as `claude` with a uid remapped at start (see CUID/CGID in the Dockerfile), so anything

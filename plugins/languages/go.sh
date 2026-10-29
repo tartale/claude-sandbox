@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ARCH=$(dpkg --print-architecture)
-GO_VERSION=$(echo "${LANGUAGE_VERSIONS:-}" | tr ' ' '\n' | grep '^go-' | head -1) || true
+GO_VERSION=$(echo "${CS_LANGUAGE_VERSIONS:-}" | tr ' ' '\n' | grep '^go-' | head -1) || true
 GO_VERSION=${GO_VERSION:-$(curl -fsSL "https://go.dev/dl/?mode=json" | jq -r '.[0].version')}
 GO_VERSION=${GO_VERSION/go-/go}
 
