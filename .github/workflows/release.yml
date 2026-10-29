@@ -8,6 +8,9 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Tag pushes wait for approval in the GitHub UI, so a session with push access cannot
+    # publish an image by pushing a tag.
+    environment: release
     permissions:
       contents: write
       packages: write
