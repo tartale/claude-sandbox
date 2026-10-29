@@ -47,11 +47,12 @@ case "\$1 \$2" in
     "network inspect")
         shift 2; fmt=""; [ "\$1" = -f ] && { fmt=\$2; shift 2; }
         [ -f "${ST}/net-\$1" ] || exit 1
-        case "\$fmt" in *Driver*Subnet*|"") cat "${ST}/net-\$1" ;; *Driver*) echo "\$(cut -d' ' -f1 "${ST}/net-\$1")" ;; *Subnet*) cut -d' ' -f2 "${ST}/net-\$1" ;; esac ;;
+        case "\$fmt" in
+            *IPRange*) read -r d sub rng < "${ST}/net-\$1"; echo "\$d|\$sub|\$rng" ;; *Driver*Subnet*|"") cat "${ST}/net-\$1" ;; *Driver*) echo "\$(cut -d' ' -f1 "${ST}/net-\$1")" ;; *Subnet*) cut -d' ' -f2 "${ST}/net-\$1" ;; esac ;;
     "network create")
-        shift 2; drv=bridge; sub=""
-        while [ \$# -gt 1 ]; do case "\$1" in -d) drv=\$2; shift 2 ;; --subnet) sub=\$2; shift 2 ;; *) shift ;; esac; done
-        echo "\$drv \$sub" > "${ST}/net-\$1" ;;
+        shift 2; drv=bridge; sub=""; rng=""
+        while [ \$# -gt 1 ]; do case "\$1" in -d) drv=\$2; shift 2 ;; --subnet) sub=\$2; shift 2 ;; --ip-range) rng=\$2; shift 2 ;; *) shift ;; esac; done
+        echo "\$drv \$sub \$rng" > "${ST}/net-\$1" ;;
     "network rm") rm -f "${ST}/net-\$3" ;;
     "run --rm") cat "${ST}/run-output" ;;
     "info "*) [ "\$2" = --format ] && echo "\${STUB_DOCKER_OS:-Debian}" ;;
@@ -160,6 +161,33 @@ check "explicit options override detection" logged "--gateway 192.168.1.254 --ip
 reset
 net_sh setup macvlan --ip-range 192.168.1.192/28 --name mynet --yes
 check "--name picks the network name" test -e "${ST}/net-mynet"
+
+reset
+net_sh setup bridge --yes
+net_sh setup ipvlan --ip-range 192.168.1.192/28 --yes; rc=$?
+check "ipvlan setup does not accept an existing bridge of the same name" test "${rc}" -ne 0
+check "...says what exists and how to clear it" mentions "network.sh remove"
+check "...and does not claim to have set anything up" lacks "Use it"
+reset
+net_sh setup macvlan --ip-range 192.168.1.192/28 --yes
+net_sh setup macvlan --ip-range 192.168.1.208/28 --yes; rc=$?
+check "a different range on an existing network is refused" test "${rc}" -ne 0
+net_sh setup macvlan --ip-range 192.168.1.192/28 --yes; rc=$?
+check "the same network again is accepted" test "${rc}" -eq 0
+reset
+net_sh setup bridge --yes
+net_sh setup bridge --yes --subnet 172.31.0.0/24; rc=$?
+check "a bridge with a different subnet is refused" test "${rc}" -ne 0
+
+reset
+net_sh setup ipvlan --ip-range 192.168.1.200/24 --yes; rc=$?
+check "an ip-range covering the whole LAN is refused" test "${rc}" -ne 0
+check "...suggesting a small block that contains it" mentions "192.168.1.192/28"
+check "...and creating nothing" test ! -e "${ST}/net-claude-sandbox"
+net_sh setup ipvlan --ip-range 192.168.1.0/24 --yes; rc=$?
+check "an aligned ip-range equal to the LAN subnet is refused" test "${rc}" -ne 0
+net_sh setup ipvlan --ip-range 192.168.1.200/28 --yes; rc=$?
+check "an ip-range with host bits set is refused" test "${rc}" -ne 0
 
 net_sh setup bogus; rc=$?
 check "an unknown network type is an error" test "${rc}" -ne 0

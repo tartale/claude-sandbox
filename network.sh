@@ -44,6 +44,9 @@ in_cidr() {
     mask=$(( (0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF ))
     [ $(( $(ip2int "$1") & mask )) -eq $(( $(ip2int "${2%/*}") & mask )) ]
 }
+# net_of CIDR -- the network address of CIDR, as an integer.
+net_of() { local bits=${1#*/}; echo $(( $(ip2int "${1%/*}") & ((0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF) )); }
+int2ip() { echo "$(( ($1 >> 24) & 255 )).$(( ($1 >> 16) & 255 )).$(( ($1 >> 8) & 255 )).$(( $1 & 255 ))"; }
 # cidr_within INNER OUTER -- true when every address of INNER is in OUTER.
 cidr_within() { [ "${1#*/}" -ge "${2#*/}" ] && in_cidr "${1%/*}" "$2"; }
 
@@ -57,6 +60,15 @@ need_docker() {
     esac
 }
 exists() { docker network inspect "$NAME" >/dev/null 2>&1; }
+# existing_matches DRIVER SUBNET IP_RANGE -- an existing network of this name is only kept when it
+# is the one asked for; a leftover of another type or range would otherwise be reported as done.
+existing_matches() {
+    local have want="$1|$2|$3"
+    have=$(docker network inspect -f '{{.Driver}}|{{range .IPAM.Config}}{{.Subnet}}|{{.IPRange}}{{end}}' "$NAME")
+    [ "$have" = "$want" ] && return 0
+    warn "network $NAME already exists, as ${have//|/ } (wanted ${want//|/ })"
+    die "run 'network.sh remove' first (it also removes the firewall rules), or pick another --name"
+}
 confirm() {
     [ "$YES" = true ] && return 0
     local a; read -r -p "  Create it? [Y/n] " a
@@ -106,7 +118,7 @@ setup_bridge() {
         else note "resolver  $resolver (public: not blocked, no rule needed)"; resolver=""; fi
     fi
     note "blocks     $PRIVATE_RANGES"
-    if exists; then ok "network $NAME already exists"
+    if exists; then existing_matches bridge "$subnet" ""; ok "network $NAME already exists"
     else
         confirm || die "stopped"
         docker network create --subnet "$subnet" "$NAME" >/dev/null
@@ -130,13 +142,18 @@ setup_lan() {   # driver
     { [ -n "$subnet" ] && valid_cidr "$subnet"; } || die "could not work out the LAN subnet; pass --subnet CIDR"
     valid_ip "$gateway" || die "could not work out the gateway; pass --gateway IP"
     cidr_within "$IP_RANGE" "$subnet" || die "--ip-range $IP_RANGE is not inside the subnet $subnet"
+    if [ "${IP_RANGE#*/}" -le "${subnet#*/}" ] || [ "$(net_of "$IP_RANGE")" != "$(ip2int "${IP_RANGE%/*}")" ]; then
+        local bits=28 slice
+        slice="$(int2ip "$(net_of "${IP_RANGE%/*}/$bits")")/$bits"
+        die "--ip-range $IP_RANGE is not a slice of $subnet: it covers the whole LAN or has host bits set. Give a small block your DHCP server does not hand out, for example $slice"
+    fi
     if [ "$driver" = macvlan ] && [ -d "/sys/class/net/$parent/wireless" ]; then
         die "$parent is a Wi-Fi interface and macvlan does not work over it; use: network.sh setup ipvlan ..."
     fi
     say "$driver network $NAME"
     note "parent     $parent"; note "subnet     $subnet"; note "gateway    $gateway"; note "ip range   $IP_RANGE"
     [ "$driver" = ipvlan ] && note "mode       $MODE"
-    if exists; then ok "network $NAME already exists"
+    if exists; then existing_matches "$driver" "$subnet" "$IP_RANGE"; ok "network $NAME already exists"
     else
         confirm || die "stopped"
         local args=(-d "$driver" --subnet "$subnet" --gateway "$gateway" --ip-range "$IP_RANGE" -o "parent=$parent")
