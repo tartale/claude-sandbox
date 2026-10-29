@@ -50,7 +50,7 @@ Commit `.claude/sandbox/` (including `ref`). Run `init.sh` again to update the s
 Every setting is documented where it lives:
 
 - **`.envrc-cs`**: launcher settings (`CS_*`: image, docker flags, limits, and so on). `init.sh` adds `source_env .envrc-cs` to `.envrc`, so direnv loads it, and adds `.envrc*` to `.git/info/exclude` (local to the clone) so neither is committed by accident; without direnv, `source .envrc-cs` in your shell.
-- **`.env`**: secrets and variables passed into the container. `init.sh` keeps `CS_GITHUB_TOKEN` and your user-config repo and token in a marked block; add anything else the project needs outside it.
+- **`.env`**: secrets and variables passed into the container. `init.sh` keeps `CS_GITHUB_TOKEN`, `CS_GITHUB_HOST` and your user-config repo and token in a marked block; add anything else the project needs outside it. For GitHub Enterprise (Server, or Cloud with a `*.ghe.com` tenant) `init.sh` takes the host from the origin remote and writes it as `CS_GITHUB_HOST`; the token, `git`, `gh` and the user-config clone then use that host. The launcher scripts themselves still come from github.com, and the `ghcr.io` login is skipped off github.com (set `CS_IMAGE_REPO` for your own registry).
 - **`.claude/sandbox/plugin.sh`**: the tools to install in the project's image. Run `.claude/sandbox/build.sh` after changing it. See [Plugins and custom images](docs/plugins.md).
 
 ## Run

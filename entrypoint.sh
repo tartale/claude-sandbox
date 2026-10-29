@@ -1,8 +1,11 @@
 #!/bin/bash
 set -e
 
+# shellcheck source=github-config.sh
+. /usr/local/bin/github-config.sh
+CS_GITHUB_HOST="${CS_GITHUB_HOST:-github.com}"
 GITHUB_TOKEN="$CS_GITHUB_TOKEN"
-export GH_TOKEN="$CS_GITHUB_TOKEN"
+export_gh_env "$CS_GITHUB_HOST" "$GITHUB_TOKEN"
 
 existing_group=$(getent group "${CGID}" 2>/dev/null | cut -d: -f1)
 if [ -n "$existing_group" ] && [ "$existing_group" != "claude" ]; then
@@ -34,7 +37,7 @@ elif [ -n "$CS_USER_CONFIG_REPO" ]; then
     user_config=/home/claude/.claude-user
     if GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraheader \
         GIT_CONFIG_VALUE_0="Authorization: Basic $(printf 'x-access-token:%s' "$CS_USER_CONFIG_TOKEN" | base64 -w0)" \
-        git clone --quiet "https://github.com/${CS_USER_CONFIG_REPO}.git" "$user_config"; then
+        git clone --quiet "https://${CS_GITHUB_HOST}/${CS_USER_CONFIG_REPO}.git" "$user_config"; then
         # claude-user-sync exports changes as a patch against this ref; claude-user-pull moves it.
         git -C "$user_config" update-ref refs/sandbox/base HEAD
         chown -R claude:claude "$user_config"
@@ -45,13 +48,8 @@ fi
 
 # .git/config is read-only in the container, so git must not try to write upstream
 # tracking into it (checkout -b and worktree add -b from a remote branch would fail).
-printf '[url "https://github.com/"]\n\tinsteadOf = git@github.com:\n[branch]\n\tautoSetupMerge = false\n' > /tmp/gitconfig
-if [ -n "$GITHUB_TOKEN" ]; then
-    (umask 077; printf '#!/bin/sh\necho username=x-access-token\necho password=%s\n' "$GITHUB_TOKEN" > /tmp/git-credential-github-token)
-    chown claude:claude /tmp/git-credential-github-token
-    chmod 700 /tmp/git-credential-github-token
-    printf '[credential "https://github.com"]\n\thelper = /tmp/git-credential-github-token\n' >> /tmp/gitconfig
-fi
+write_github_gitconfig "$CS_GITHUB_HOST" "$GITHUB_TOKEN" /tmp/gitconfig /tmp/git-credential-github-token
+if [ -n "$GITHUB_TOKEN" ]; then chown claude:claude /tmp/git-credential-github-token; fi
 # GIT_CONFIG_GLOBAL points at this file, which hides the host's ~/.gitconfig. Copy
 # only the identity: the rest of the host file (path rewrites, hooks paths) does
 # not apply in the container.

@@ -43,6 +43,7 @@ RUN chown claude:claude /workspace
 
 COPY plugins/install.sh /usr/local/bin/install-plugins.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY github-config.sh /usr/local/bin/github-config.sh
 COPY setup-scopes.sh /usr/local/bin/setup-scopes.sh
 COPY user-sync.sh /usr/local/bin/claude-user-sync
 COPY user-pull.sh /usr/local/bin/claude-user-pull
