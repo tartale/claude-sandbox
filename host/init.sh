@@ -227,7 +227,7 @@ export CS_REF="${CS_REF:-$(cat "${THIS_SCRIPT_DIR}/ref" 2>/dev/null || echo main
 
 CS_PROJECT_DIR="$(cd "${THIS_SCRIPT_DIR}/../.." && pwd)"
 export CS_PROJECT_DIR CS_PROJECT_NAME="@REPO@"
-exec /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/${CS_REF}/cs)" cs @CMD@ "$@"
+exec /bin/bash -c "$(curl -fsSL "https://raw.githubusercontent.com/tartale/claude-sandbox/${CS_REF}/cs")" cs @CMD@ "$@"
 EOF2
 )
 render_wrapper() {   # stub name, cs command, what it does, its arguments
@@ -495,10 +495,14 @@ add_setting() {   # NAME VALUE ACTIVE(1|0) COMMENT
         note "kept    $1"
         return
     fi
-    local entry
+    # The value is double-quoted, so a path with spaces survives and shellcheck (SC2086) is
+    # satisfied; a caller that wants a variable expanded when the file is sourced passes it
+    # with its dollar sign ($HOME/...).
+    local entry value
+    value=$(printf '%s' "$2" | sed 's/[\\"`]/\\&/g')
     entry=$(printf '%s\n' "$4" | sed 's/^/# /')
-    if [ "$3" = 1 ]; then entry+=$(printf '\nexport %s=%s' "$1" "$2")
-    else entry+=$(printf '\n# export %s=%s' "$1" "$2"); fi
+    if [ "$3" = 1 ]; then entry+=$(printf '\nexport %s="%s"' "$1" "$value")
+    else entry+=$(printf '\n# export %s="%s"' "$1" "$value"); fi
     cs_file_put "$CS_RC" "$entry"
     ok "added   $1"
 }
@@ -636,7 +640,7 @@ if [ "$DO_REGISTRY" = 1 ]; then
     SCOPES=$(printf '%s\n' "$H" | tr 'A-Z' 'a-z' | sed -n 's/^x-oauth-scopes: *//p')
     case ",$SCOPES," in *write:packages*) ;; *) die "token lacks write:packages (has: ${SCOPES:-none})" ;; esac
     EXTRA=$(printf '%s' "$SCOPES" | tr -d ' ' | tr ',' '\n' | grep -vE '^(write:packages|read:packages)$' || true)
-    [ -z "$EXTRA" ] || warn "token also has scopes: $(echo $EXTRA); only write:packages is needed"
+    [ -z "$EXTRA" ] || warn "token also has scopes: $(tr '\n' ' ' <<<"$EXTRA"); only write:packages is needed"
     # Written by hand: `docker login` would hand the secret to a credential helper
     # (macOS Keychain), and the container cannot reach that.
     ( umask 077; mkdir -p "$DOCKER_DIR"
