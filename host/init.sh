@@ -155,6 +155,13 @@ http_code() { sed -n '1s/^HTTP[^ ]* \([0-9]*\).*/\1/p'; }
 token_owner() { gh_get "$1" "/user" | grep -o '"login": *"[^"]*"' | head -n 1 | cut -d'"' -f4 || true; }
 lower() { printf '%s' "$1" | tr 'A-Z' 'a-z'; }
 
+# The CS_GITHUB_TOKEN entry of the env file. A reference ($NAME or ${NAME}) is a host variable the
+# launcher expands when it starts the sandbox, so it is resolved here the same way: stored_ref prints
+# the variable's name, stored_token the token (the variable's value for a reference).
+stored_raw() { if [ -f "$ENV_FILE" ]; then grep '^CS_GITHUB_TOKEN=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true; fi; }
+stored_ref() { local raw; raw=$(stored_raw); if [[ "$raw" =~ ^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$ ]]; then printf '%s' "${BASH_REMATCH[1]}"; fi; }
+stored_token() { local raw ref; raw=$(stored_raw); ref=$(stored_ref); if [ -n "$ref" ]; then printf '%s' "${!ref:-}"; else printf '%s' "$raw"; fi; }
+
 [ -d /workspace ] && [ -S /var/run/docker.sock ] && [ -n "${CUID:-}" ] && die "run this on the host, not inside the sandbox"
 
 say "Prerequisites"
@@ -313,8 +320,8 @@ done
 
 # Questions about things that are already set up default to No.
 # The token already in the env file, and whose it is, drive the defaults of the two questions below.
-STORED=""; STORED_OWNER=""; ADMIN_NOW=""
-[ -f "$ENV_FILE" ] && STORED=$(grep '^CS_GITHUB_TOKEN=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true)
+STORED=$(stored_token); STORED_REF=$(stored_ref); STORED_OWNER=""; ADMIN_NOW=""
+WHERE="the token in $ENV_FILE"; [ -z "$STORED_REF" ] || WHERE="the token in \$$STORED_REF"
 if [ -n "$STORED" ] && command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
     STORED_OWNER=$(token_owner "$STORED"); ADMIN_NOW=$(gh api user --jq .login 2>/dev/null || true)
 fi
@@ -338,11 +345,11 @@ fi
 TOKEN_DEFAULT=Y; TOKEN_NOTE=""
 if [ -n "$BOT" ]; then
     if [ -z "$STORED" ]; then
-        :
+        [ -z "$STORED_REF" ] || TOKEN_NOTE=" (\$$STORED_REF is not set in this shell)"
     elif [ -n "$STORED_OWNER" ] && [ "$(lower "$STORED_OWNER")" = "$(lower "$BOT")" ]; then
-        TOKEN_DEFAULT=N; TOKEN_NOTE=" (the token in $ENV_FILE is $BOT's)"
+        TOKEN_DEFAULT=N; TOKEN_NOTE=" ($WHERE is $BOT's)"
     else
-        TOKEN_NOTE=" (the token in $ENV_FILE belongs to ${STORED_OWNER:-an unknown account}, not $BOT)"
+        TOKEN_NOTE=" ($WHERE belongs to ${STORED_OWNER:-an unknown account}, not $BOT)"
     fi
 elif [[ "$STORED" == ghp_* ]]; then
     if classic_token_problem "$STORED" >/dev/null; then
@@ -351,7 +358,7 @@ elif [[ "$STORED" == ghp_* ]]; then
 elif [ -n "$STORED" ] && token_problem "$STORED" >/dev/null && [ "$(token_other_repos "$STORED")" = 0 ]; then
     TOKEN_DEFAULT=N; TOKEN_NOTE=" (a valid token is already in $ENV_FILE)"
 fi
-unset STORED STORED_OWNER ADMIN_NOW
+unset STORED STORED_OWNER ADMIN_NOW WHERE
 ask_def "  Create and store a GitHub token for $REPO?$TOKEN_NOTE" "$TOKEN_DEFAULT" 0 && DO_TOKEN=1
 
 REGISTRY_DEFAULT=Y; REGISTRY_NOTE=""
@@ -590,8 +597,11 @@ if [ -n "$BOT" ]; then
     fi
     if [ "$DO_TOKEN" != 1 ]; then
         # Keeping the token already in the env file: it has to be the bot's.
-        STORED=""; [ -f "$ENV_FILE" ] && STORED=$(grep '^CS_GITHUB_TOKEN=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true)
-        if [ -z "$STORED" ]; then
+        STORED=$(stored_token); REF=$(stored_ref)
+        if [ -n "$REF" ] && [ -z "$STORED" ]; then
+            warn "the host variable $REF holds the token but is not set in this shell"
+            note "export it, or run init.sh in a shell that has it"
+        elif [ -z "$STORED" ]; then
             note "no token is stored yet: run init.sh again and create one as $BOT"
         else
             TOKEN_OWNER=$(token_owner "$STORED")
@@ -602,38 +612,56 @@ if [ -n "$BOT" ]; then
                 note "run init.sh again, say yes to creating a token, and create it while signed in as $BOT"
             fi
         fi
-        unset STORED
+        unset STORED REF
     fi
 fi
 
 # --- fine-grained PAT for git and gh -----------------------------------------
 if [ "$DO_TOKEN" = 1 ]; then
     say "Token for $REPO"
+    TOKEN=""; SHARE_VAR=""
+    # A bot's token reaches every repo the bot can access, so one token can serve all your projects: keep
+    # it in a host variable (where your shell starts) and let each project's env file hold only the
+    # reference, which the launcher expands.
     if [ -n "$BOT" ]; then
-        # A fine-grained token can only reach repos its own account owns (or an organization's), so
-        # it cannot reach a repo the bot merely collaborates on. A classic token can, and what it
-        # reaches is what the bot account can access: invite the bot only to the repos it may touch.
-        CLASSIC_SCOPE=public_repo
-        case "${REPO_INFO:-}" in true*) CLASSIC_SCOPE=repo ;; esac   # REPO_INFO is "private<TAB>admin"
-        URL="https://$GITHUB_HOST/settings/tokens/new?scopes=$CLASSIC_SCOPE&description=claude-sandbox"
-        note "GitHub's fine-grained tokens cannot reach a repo that $BOT only collaborates on, so create a"
-        note "classic token as $BOT, with the scope $CLASSIC_SCOPE and nothing else (no workflow, no admin:*)."
-        note "It reaches every repo $BOT can access, so invite $BOT only to the repos the agent may touch:"
-        note "$URL"
-        note "Sign in as $BOT (a private window) before opening the page: the token must be the bot's."
-    else
-        URL="https://$GITHUB_HOST/settings/personal-access-tokens/new?name=cs-${REPO#*/}&description=claude-sandbox&expires_in=90&contents=write&pull_requests=write&issues=write&metadata=read"
-        note "In the browser: Only select repositories -> $REPO. Keep the pre-filled"
-        note "permissions (Contents, Pull requests, Issues: RW). No Administration or Workflows."
-        note "$URL"
-        note "If a fine-grained token cannot be used, a classic token (ghp_) is accepted after a warning."
+        SHARE_DEFAULT=$(stored_ref); SHARE_DEFAULT=${SHARE_DEFAULT:-CS_BOT_TOKEN}
+        if ask_def "  Keep the bot's token in a host variable that all your projects share (this project's $ENV_FILE then holds only a reference)?" Y 0; then
+            read -r -p "  The variable's name [$SHARE_DEFAULT]: " SHARE_VAR
+            SHARE_VAR=${SHARE_VAR:-$SHARE_DEFAULT}
+            { [[ "$SHARE_VAR" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] && [ "$SHARE_VAR" != CS_GITHUB_TOKEN ]; } || die "not a usable variable name: $SHARE_VAR"
+            if [ -n "${!SHARE_VAR:-}" ]; then
+                TOKEN=${!SHARE_VAR}
+                ok "using \$$SHARE_VAR from the environment"
+            fi
+        fi
     fi
-    read -r -p "  Press Enter to open it (Ctrl-C to stop)... " _
-    (command -v open >/dev/null && open "$URL") || (command -v xdg-open >/dev/null && xdg-open "$URL") || warn "could not open a browser; use the link above"
+    if [ -z "$TOKEN" ]; then
+        if [ -n "$BOT" ]; then
+            # A fine-grained token can only reach repos its own account owns (or an organization's), so
+            # it cannot reach a repo the bot merely collaborates on. A classic token can, and what it
+            # reaches is what the bot account can access: invite the bot only to the repos it may touch.
+            CLASSIC_SCOPE=public_repo
+            case "${REPO_INFO:-}" in true*) CLASSIC_SCOPE=repo ;; esac   # REPO_INFO is "private<TAB>admin"
+            URL="https://$GITHUB_HOST/settings/tokens/new?scopes=$CLASSIC_SCOPE&description=claude-sandbox"
+            note "GitHub's fine-grained tokens cannot reach a repo that $BOT only collaborates on, so create a"
+            note "classic token as $BOT, with the scope $CLASSIC_SCOPE and nothing else (no workflow, no admin:*)."
+            note "It reaches every repo $BOT can access, so invite $BOT only to the repos the agent may touch:"
+            note "$URL"
+            note "Sign in as $BOT (a private window) before opening the page: the token must be the bot's."
+        else
+            URL="https://$GITHUB_HOST/settings/personal-access-tokens/new?name=cs-${REPO#*/}&description=claude-sandbox&expires_in=90&contents=write&pull_requests=write&issues=write&metadata=read"
+            note "In the browser: Only select repositories -> $REPO. Keep the pre-filled"
+            note "permissions (Contents, Pull requests, Issues: RW). No Administration or Workflows."
+            note "$URL"
+            note "If a fine-grained token cannot be used, a classic token (ghp_) is accepted after a warning."
+        fi
+        read -r -p "  Press Enter to open it (Ctrl-C to stop)... " _
+        (command -v open >/dev/null && open "$URL") || (command -v xdg-open >/dev/null && xdg-open "$URL") || warn "could not open a browser; use the link above"
 
-    read -r -s -p "  Paste the token (hidden; blank skips): " TOKEN; echo
-    # A terminal in bracketed-paste mode wraps the paste in ESC[200~ ... ESC[201~.
-    TOKEN=${TOKEN//$'\e[200~'/}; TOKEN=${TOKEN//$'\e[201~'/}
+        read -r -s -p "  Paste the token (hidden; blank skips): " TOKEN; echo
+        # A terminal in bracketed-paste mode wraps the paste in ESC[200~ ... ESC[201~.
+        TOKEN=${TOKEN//$'\e[200~'/}; TOKEN=${TOKEN//$'\e[201~'/}
+    fi
     if [ -n "$TOKEN" ]; then
         if [[ "$TOKEN" == ghp_* ]]; then
             problem=$(classic_token_problem "$TOKEN") || die "$problem"
@@ -755,7 +783,7 @@ if [ "$DO_RULESET" = 1 ]; then
     say "Rulesets"
     ADMIN_LOGIN=$(gh api user --jq .login 2>/dev/null || true)
     if [ -z "${TOKEN_OWNER:-}" ] && [ -f "$ENV_FILE" ]; then
-        STORED=$(grep '^CS_GITHUB_TOKEN=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true)
+        STORED=$(stored_token)
         TOKEN_OWNER=""; [ -z "$STORED" ] || TOKEN_OWNER=$(token_owner "$STORED")
         unset STORED
     fi
