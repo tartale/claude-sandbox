@@ -417,6 +417,7 @@ check "with a bot and no stored token the token question defaults to yes" mentio
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
 run_init 'y\ntartalebot\ny\nn\ny\n\nghp_abc\n'; rc=$?
 check "for a bot the token page is the classic one with the narrowest scope" mentions "settings/tokens/new?scopes=public_repo"
+check "...named after the repository, like the fine-grained one" mentions "description=cs-Demo-App"
 check "...explaining why a fine-grained token will not do" mentions "cannot reach a repo that tartalebot only collaborates on"
 check "...saying what the token reaches, on the token page's instructions" mentions "invite tartalebot only to the repos the agent may touch"
 check "a bot has no choice, so there is no classic-token warning" lacks "classic token: it cannot be limited"
