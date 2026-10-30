@@ -59,8 +59,8 @@ PLUGINS=https://example.com/my-tools.sh CS_IMAGE_TAG=my-tools /bin/bash -c "$(cu
 To build from another npm registry, set `CS_NPM_REGISTRY` (its URL, with the `https://`). If it needs credentials, put them in an npmrc file on the host and set `CS_NPMRC` to its path. The file is mounted as a BuildKit secret, so the token is not in the image or its history. Both apply to Claude Code and to the plugins' `npm install` steps. For example, in `.envrc-cs`:
 
 ```bash
-export CS_NPM_REGISTRY=https://registry.example.com/npm/
-export CS_NPMRC=$HOME/.npmrc
+export CS_NPM_REGISTRY="https://registry.example.com/npm/"
+export CS_NPMRC="$HOME/.npmrc"
 ```
 
 where the npmrc holds a line such as `//registry.example.com/npm/:_authToken=<token>`.

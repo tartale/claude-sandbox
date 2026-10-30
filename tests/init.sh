@@ -68,8 +68,14 @@ check "a fresh project runs to the end" test "${rc}" -eq 0
 for s in ${STUBS}; do check "creates ${s}" has_file "${SB}/${s}"; done
 for s in build.sh run.sh start.sh restart.sh sync.sh; do check "${s} is executable" mode_is "${SB}/${s}" 755; done
 check "plugin.sh is not executable" mode_is "${SB}/plugin.sh" 644
+# Everything init writes that the shell reads is checked for unquoted expansions (SC2086).
+if command -v shellcheck >/dev/null; then
+    check "the generated stubs have no unquoted expansions" shellcheck -s bash --severity=info --include=SC2086 "${SB}"/*.sh
+else
+    echo "skip - the generated stubs have no unquoted expansions (shellcheck not installed)"
+fi
 check "stubs hand the repo name to cs" contains "${SB}/build.sh" 'CS_PROJECT_NAME="Demo-App"'
-check "build.sh passes its arguments on to cs build" contains "${SB}/build.sh" '/cs)" cs build "$@"'
+check "build.sh passes its arguments on to cs build" contains "${SB}/build.sh" '/cs")" cs build "$@"'
 check "records the stub hashes" has_file "${SB}/.init-hashes"
 for s in ${STUBS}; do check "keeps a copy of the ${s} template" has_file "${SB}/.init-base/${s}"; done
 
@@ -157,7 +163,11 @@ printf 'export MINE=1\n' > "${WORK}/proj/.envrc"
 run_init "${NO3}"
 RC="${WORK}/proj/.envrc-cs"
 names() { grep -oE '^(# )?(export )?[A-Z][A-Z0-9_]*=' "$1" | sed -E 's/^(# )?(export )?//; s/=$//'; }
-check "the settings go in .envrc-cs" contains "${RC}" 'export CS_IMAGE_REPO=ghcr.io/tartale/claude-sandbox'
+if command -v shellcheck >/dev/null; then
+    check ".envrc-cs and .envrc have no unquoted expansions" shellcheck -s bash --severity=info --include=SC2086 "${RC}" "${WORK}/proj/.envrc"
+fi
+check "values are double-quoted, including the \$HOME default" contains "${RC}" '# export CS_USER_CONFIG_CHECKOUT="$HOME/.claude-user"'
+check "the settings go in .envrc-cs" contains "${RC}" 'export CS_IMAGE_REPO="ghcr.io/tartale/claude-sandbox"'
 check ".envrc-cs comments every variable directly above it" test "$(awk '/^(# )?(export )?[A-Z_]+=/ && prev ~ /^# [A-Za-z-]/ { n++ } { prev = $0 } END { print n + 0 }' "${RC}")" -eq "$(grep -cE '^(# )?(export )?[A-Z_]+=' "${RC}")"
 # The name is CS_LANGUAGE_VERSIONS everywhere; the bare name is not read or written anywhere.
 # Tracked files only in a checkout, so a stale ignored file (plugins/.build, .env) cannot fail it.
