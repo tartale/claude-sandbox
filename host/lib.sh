@@ -36,6 +36,6 @@ cs_die() { echo "error: $*" >&2; exit 1; }
 # cs_confirm QUESTION YES -- asks [y/N] unless YES is true.
 cs_confirm() {
     [ "$2" = true ] && return 0
-    local a; read -r -p "$1 [y/N] " a
+    local a; printf '%s [y/N] ' "$1" >&2; read -r a || true
     [[ "$a" =~ ^[Yy] ]]
 }

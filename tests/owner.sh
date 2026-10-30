@@ -136,5 +136,38 @@ check "a run with nothing for you to approve is refused" mentions "nothing in ru
 world; pr '' env CS_FETCHED=1 bash "${ROOT}/host/release.sh" tag v1.2.3 --yes
 check "release does not run from a downloaded copy either" test ! -s "${D}/log"
 
+# --- several actions in one command -----------------------------------------------------
+line_of() { grep -n -F -- "$1" "${D}/log" | head -n 1 | cut -d: -f1; }
+world; pr 'y\n' bash "${ROOT}/host/pr.sh" approve merge 5; rc=$?
+check "approve merge asks one question for both" mentions "Approve #5, then merge it into main and delete its branch?"
+check "...approves" logged "gh pr review 5 --repo o/r --approve"
+check "...then merges" logged "gh pr merge 5 --repo o/r --merge --delete-branch"
+check "...in that order" test "$(line_of 'pr review')" -lt "$(line_of 'pr merge')"
+world; pr '' bash "${ROOT}/host/pr.sh" approve merge 5 --yes
+check "--yes does both without asking" logged "gh pr merge 5"
+world; pr 'n\n' bash "${ROOT}/host/pr.sh" approve merge 5
+check "n does neither" test "$(grep -c 'pr review\|pr merge' "${D}/log")" -eq 0
+world; pr '' bash "${ROOT}/host/pr.sh" merge approve 5 --yes; rc=$?
+check "merge before approve is refused" mentions "approve comes before merge"
+check "...and does nothing" not_logged "pr review"
+world; pr '' bash "${ROOT}/host/pr.sh" list approve; rc=$?
+check "list cannot be combined with other actions" test "${rc}" -eq 2
+world; printf '5\tMine\ttartale\tOPEN\tmain\tREVIEW_REQUIRED\n' > "${D}/prrow"; pr '' bash "${ROOT}/host/pr.sh" approve merge 5 --yes; rc=$?
+check "the chain refuses your own pull request" mentions "GitHub does not count your own approval"
+world; printf '1' > "${D}/failing"; pr '' bash "${ROOT}/host/pr.sh" approve merge 5 --yes
+check "...and failing checks" not_logged "pr review"
+
+world; printf '77\twaiting\n' > "${D}/run"; pr '' bash "${ROOT}/host/release.sh" tag approve v1.2.3 --yes; rc=$?
+check "tag approve creates the tag" logged "refs/tags/v1.2.3"
+check "...then approves the release" logged "state=approved"
+check "...in that order" test "$(line_of 'git/refs')" -lt "$(line_of 'pending_deployments -f')"
+world; printf '77\twaiting\n' > "${D}/run"; pr 'y\n' bash "${ROOT}/host/release.sh" tag approve v1.2.3
+check "tag approve asks one question for both" mentions "Create v1.2.3, then approve its release?"
+world; pr '' bash "${ROOT}/host/release.sh" approve tag v1.2.3 --yes; rc=$?
+check "approve before tag is refused" mentions "tag comes before approve"
+world; pr '' env CS_RELEASE_WAIT=0 bash "${ROOT}/host/release.sh" tag approve v1.2.3 --yes; rc=$?
+check "if the run never starts the tag is kept and the error says so" mentions "created v1.2.3"
+check "...and no run found" mentions "no release run found for v1.2.3"
+
 echo; echo "${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]
