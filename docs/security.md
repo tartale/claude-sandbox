@@ -203,7 +203,7 @@ These need repository admin rights or your router, so `init.sh` cannot apply the
 
 ### A real merge gate
 
-The sandbox token acts as your account, so the agent can approve nothing and merge everything: a PR needs no approval. Make the agent a different GitHub account, and require an approval from yours. With a second account (a bot) that the sandbox token belongs to:
+The sandbox token acts as your account, so the agent can approve nothing and merge everything: a PR needs no approval. Make the agent a different GitHub account, and require an approval from yours. `init.sh` does this for you: answer yes to "Is this token for a separate bot account", give the bot's username, and it checks the bot has the Write role (offering to invite it), checks the pasted token really belongs to the bot, and then sets the `main` ruleset to require one approval that counts after the last push. Run it again later and it raises an existing ruleset the same way, after asking, and never lowers one. By hand, with a second account (a bot) that the sandbox token belongs to:
 
 1. Invite the bot to the repo with the Write role (Settings, Collaborators) and accept as the bot.
 2. As the bot, create a fine-grained token limited to this repo with Contents, Pull requests and Issues write and no Administration or Workflows, and give that token to the sandbox (`cs init`, the token step). The agent's PRs are now authored by the bot.
@@ -220,7 +220,7 @@ To check it from the sandbox, open a PR, then try `gh pr merge <number> --merge`
 
 ### Tags
 
-`release.yml` runs on any `v*` tag but waits for your approval (the `release` environment), so a tag the agent pushes cannot publish. To also stop the agent creating, moving or deleting those tags, add a tag ruleset (needs your admin login). The admin role can bypass it, so you can still tag a release:
+`release.yml` runs on any `v*` tag but waits for your approval (the `release` environment), so a tag the agent pushes cannot publish. `init.sh` also adds a ruleset that stops the agent creating, moving or deleting those tags (the rulesets step needs your admin `gh` login). The admin role can bypass it, so you can still tag a release. By hand:
 
 ```bash
 R=$(gh repo view --json nameWithOwner -q .nameWithOwner)

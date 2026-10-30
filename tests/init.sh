@@ -275,7 +275,7 @@ for remote in git@git.corp.example:o/Demo-App.git https://git.corp.example/o/Dem
     check "${remote}: has no ghcr.io question" lacks "ghcr.io login for pushing"
 done
 ghe_project git@git.corp.example:o/Demo-App.git
-run_init 'y\nn\n\n\n'
+run_init 'y\nn\nn\n\n\n'
 check "the token page is the Enterprise host's" mentions "https://git.corp.example/settings/personal-access-tokens/new"
 # A curl that logs its URLs and answers like a repo the token can read and push to, without Administration.
 cat > "${BIN}/curl" <<EOS
@@ -290,7 +290,7 @@ EOS
 chmod +x "${BIN}/curl"
 for remote in "git@git.corp.example:o/Demo-App.git|https://git.corp.example/api/v3/repos/o/Demo-App" "git@corp.ghe.com:o/Demo-App.git|https://api.corp.ghe.com/repos/o/Demo-App"; do
     ghe_project "${remote%%|*}"; : > "${RCURL}"
-    run_init 'y\nn\n\ngithub_pat_x\n'
+    run_init 'y\nn\nn\n\ngithub_pat_x\n'
     check "${remote%%|*}: the token is checked against ${remote##*|}" contains "${RCURL}" "${remote##*|}"
     check "${remote%%|*}: push access is probed on the Enterprise host" contains "${RCURL}" "https://$(printf '%s' "${remote%%|*}" | sed -E 's#^git@([^:]+):.*#\1#')/o/Demo-App.git/info/refs"
 done
@@ -303,8 +303,106 @@ check "github.com: the ghcr.io question is still asked" mentions "ghcr.io login 
 
 ghe_project git@github.com:o/Demo-App.git
 printf '# x\nCS_GITHUB_HOST=git.corp.example\n' > "${WORK}/proj/.env"
-run_init 'y\nn\n\n\n'
+run_init 'y\nn\nn\n\n\n'
 check "CS_GITHUB_HOST in .env overrides the remote's host" mentions "https://git.corp.example/settings/personal-access-tokens/new"
+
+# --- bot account, branch ruleset and tag ruleset ---------------------------------
+GHD="${WORK}/gh"; mkdir -p "${GHD}"
+gh_world() {   # ADMIN RULESETS(tsv, \n-separated) PR(tsv of the main ruleset's approvals/dismiss/last-push) BOT_PERMISSION
+    find "${GHD}" -mindepth 1 -delete
+    printf '%s\n' "$1" > "${GHD}/admin"; printf "$2" > "${GHD}/rulesets"; printf "$3" > "${GHD}/pr"; printf '%s' "$4" > "${GHD}/perm"
+    cat > "${BIN}/gh" <<EOS
+#!/bin/bash
+D="${GHD}"
+echo "gh \$*" >> "\$D/log"
+case "\$*" in
+    "auth status"*) exit 0 ;;
+    "api user --jq .login") cat "\$D/admin" ;;
+    "api repos/o/Demo-App --jq "*) printf 'false\ttrue\n' ;;
+    "api repos/o/Demo-App/rulesets --jq "*) cat "\$D/rulesets" ;;
+    "api repos/o/Demo-App/rulesets/7 --jq "*"@tsv") cat "\$D/pr" ;;
+    "api repos/o/Demo-App/rulesets/7 --jq "*) echo '{"updated":"payload"}' ;;
+    "api -X POST repos/o/Demo-App/rulesets --input -") cat > "\$D/post-\$(ls "\$D" | grep -c '^post-')" ;;
+    "api -X PUT repos/o/Demo-App/rulesets/7 --input -") cat > "\$D/put" ;;
+    "api repos/o/Demo-App/collaborators/"*"/permission --jq .permission") [ -s "\$D/perm" ] && cat "\$D/perm" || exit 1 ;;
+esac
+exit 0
+EOS
+    chmod +x "${BIN}/gh"
+}
+owner_curl() {   # LOGIN -- a curl whose token belongs to LOGIN and can read, push and not administer
+    cat > "${BIN}/curl" <<EOS
+#!/bin/bash
+case "\$*" in
+    *info/refs*) printf 200 ;;
+    *actions/permissions*) printf 'HTTP/2 404\r\n\r\n{}' ;;
+    *user/repos*) printf 'HTTP/2 200\r\n\r\n[]' ;;
+    */user*) printf 'HTTP/2 200\r\n\r\n{"login":"$1"}' ;;
+    *api*) printf 'HTTP/2 200\r\n\r\n{}' ;;
+esac
+EOS
+    chmod +x "${BIN}/curl"
+}
+posts() { cat "${GHD}"/post-* 2>/dev/null; }
+ghlogged() { grep -qF -- "$1" "${GHD}/log"; }
+nothing_posted() { ! ls "${GHD}"/post-* >/dev/null 2>&1; }
+has_posted() { posts | grep -qF -- "$1"; }
+
+gh_world tartale '' '' ''; new_project
+run_init 'n\nn\ny\n'; rc=$?
+check "the rulesets step creates the main ruleset" has_posted '"name":"main"'
+check "...requiring a pull request but no approval when there is no bot" has_posted '"required_approving_review_count":0'
+check "...and says the token can merge its own PRs" mentions "can merge its own PRs"
+check "it also creates the tag ruleset" has_posted '"name":"release tags","target":"tag"'
+check "...for v* tags, with the admin role able to bypass" has_posted '"include":["refs/tags/v*"]'
+check "...blocking creation, update and deletion" has_posted '{"type":"creation"},{"type":"update"},{"type":"deletion"}'
+
+gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
+run_init 'y\nn\ny\ny\ntartalebot\n\ngithub_pat_x\n'; rc=$?
+check "a bot token is accepted when it belongs to the bot" test "${rc}" -eq 0
+check "...stored in the env file" contains "${WORK}/proj/.env" 'CS_GITHUB_TOKEN=github_pat_x'
+check "a collaborator with write access is not invited again" lacks "Invite it now"
+check "with the token on another account the main ruleset requires an approval" has_posted '"required_approving_review_count":1'
+check "...that counts only after the last push" has_posted '"require_last_push_approval":true'
+check "...and is dismissed when new commits arrive" has_posted '"dismiss_stale_reviews_on_push":true'
+check "the bot flow does not say the token can merge freely" lacks "can merge its own PRs"
+
+gh_world tartale '' '' ''; owner_curl tartalebot; new_project
+run_init 'y\nn\nn\ny\ntartalebot\ny\n\ngithub_pat_x\n'
+check "a bot that is not a collaborator can be invited with Write" ghlogged "api -X PUT repos/o/Demo-App/collaborators/tartalebot -f permission=push"
+
+gh_world tartale '' '' 'admin'; owner_curl tartalebot; new_project
+run_init 'y\nn\nn\ny\ntartalebot\n\ngithub_pat_x\n'
+check "a bot with the admin role is warned about" mentions "give it the Write role instead"
+
+gh_world tartale '' '' 'write'; owner_curl tartale; new_project
+run_init 'y\nn\nn\ny\ntartalebot\n\ngithub_pat_x\n'; rc=$?
+check "a token on the wrong account is refused" test "${rc}" -ne 0
+check "...naming both accounts" mentions "belongs to tartale, not tartalebot"
+check "...and not stored" test ! -f "${WORK}/proj/.env" -o "$(grep -c 'CS_GITHUB_TOKEN=github_pat_x' "${WORK}/proj/.env" 2>/dev/null)" = 0
+
+# An existing main ruleset is made stricter only, and only when the stored token is a bot's.
+gh_world tartale '7\tmain\n8\trelease tags\n' '0\tfalse\tfalse\n' ''; owner_curl tartalebot; new_project
+printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
+run_init 'n\nn\ny\ny\n'
+check "an existing main ruleset is raised to one approval when the token is a bot's" ghlogged '"required_approving_review_count":1'
+check "...by an update of that ruleset" test -s "${GHD}/put"
+check "...with nothing else created" nothing_posted
+
+gh_world tartale '7\tmain\n8\trelease tags\n' '1\ttrue\ttrue\n' ''; owner_curl tartalebot; new_project
+printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
+run_init 'n\nn\ny\n'
+check "a ruleset that is already strict enough is left alone" mentions "already as strict as wanted"
+check "...and so are existing rulesets, so nothing is written" test ! -e "${GHD}/put" -a ! -e "${GHD}/post-0"
+
+gh_world tartale '7\tmain\n' '2\ttrue\ttrue\n' ''; new_project
+run_init 'n\nn\ny\n'
+check "a stricter ruleset is never weakened" test ! -e "${GHD}/put"
+
+gh_world tartale '' '' ''; new_project
+run_init "" "${ROOT}/host/init.sh --yes"
+check "--yes sets up both rulesets without asking" test "$(find "${GHD}" -name 'post-*' | wc -l | tr -d ' ')" -eq 2
+rm -f "${BIN}/gh"; printf '#!/bin/sh\nexit 0\n' > "${BIN}/curl"
 
 # --- --yes and --no ----------------------------------------------------------
 edited_project
@@ -316,7 +414,7 @@ check "--yes skips the token, which needs a pasted secret" lacks "Paste the toke
 
 # A paste wrapped in bracketed-paste markers is judged by the token inside.
 new_project
-run_init 'y\nn\nn\n\n\033[200~github_pat_abc\033[201~\n'; rc=$?
+run_init 'y\nn\nn\nn\n\n\033[200~github_pat_abc\033[201~\n'; rc=$?
 check "bracketed-paste markers are stripped from a pasted token" mentions "token cannot read"
 
 # --- classic tokens --------------------------------------------------------------
@@ -334,7 +432,7 @@ EOS
 ENVF="${WORK}/proj/.env"
 classic_curl 200 "repo"
 new_project
-run_init 'y\nn\nn\n\nghp_abc\nn\n'; rc=$?
+run_init 'y\nn\nn\nn\n\nghp_abc\nn\n'; rc=$?
 check "a classic token is warned about" mentions "reaches every repo your account can"
 check "...with the scopes it carries" mentions "scopes: repo"
 check "...and refused when you decline" test "${rc}" -ne 0
@@ -343,7 +441,7 @@ no_token_stored() { [ ! -f "${ENVF}" ] || ! grep -qF ghp_abc "${ENVF}"; }
 check "...storing nothing" no_token_stored
 
 new_project
-run_init 'y\nn\nn\n\nghp_abc\ny\n'; rc=$?
+run_init 'y\nn\nn\nn\n\nghp_abc\ny\n'; rc=$?
 check "a classic token is stored when you accept" test "${rc}" -eq 0
 check "...in the env file" contains "${ENVF}" 'CS_GITHUB_TOKEN=ghp_abc'
 check "...with a comment that says what a classic token is" contains "${ENVF}" '# Classic GitHub token'
@@ -352,12 +450,12 @@ check "the env file stays private" mode_is "${ENVF}" 600
 
 classic_curl 200 "repo, workflow, admin:org"
 new_project
-run_init 'y\nn\nn\n\nghp_abc\ny\n'
+run_init 'y\nn\nn\nn\n\nghp_abc\ny\n'
 check "powerful scopes are called out" mentions "powerful scopes the agent could use: workflow,admin:org"
 
 classic_curl 403 "repo"
 new_project
-run_init 'y\nn\nn\n\nghp_abc\ny\n'; rc=$?
+run_init 'y\nn\nn\nn\n\nghp_abc\ny\n'; rc=$?
 check "a classic token that cannot push is rejected" mentions "token cannot push to o/Demo-App"
 check "...without asking to continue" lacks "Use a classic token anyway"
 
