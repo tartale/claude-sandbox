@@ -617,7 +617,8 @@ if [ "$DO_TOKEN" = 1 ]; then
         case "${REPO_INFO:-}" in true*) CLASSIC_SCOPE=repo ;; esac   # REPO_INFO is "private<TAB>admin"
         URL="https://$GITHUB_HOST/settings/tokens/new?scopes=$CLASSIC_SCOPE&description=claude-sandbox"
         note "GitHub's fine-grained tokens cannot reach a repo that $BOT only collaborates on, so create a"
-        note "classic token as $BOT, with the scope $CLASSIC_SCOPE and nothing else (no workflow, no admin:*):"
+        note "classic token as $BOT, with the scope $CLASSIC_SCOPE and nothing else (no workflow, no admin:*)."
+        note "It reaches every repo $BOT can access, so invite $BOT only to the repos the agent may touch:"
         note "$URL"
         note "Sign in as $BOT (a private window) before opening the page: the token must be the bot's."
     else
@@ -638,17 +639,12 @@ if [ "$DO_TOKEN" = 1 ]; then
             problem=$(classic_token_problem "$TOKEN") || die "$problem"
             ok "push access"
             scopes=$(classic_scopes "$TOKEN")
-            if [ -n "$BOT" ]; then
-                warn "classic token: it cannot be limited to one repository; it reaches every repo $BOT can access"
-                note "invite $BOT only to the repos the agent may touch"
-            else
-                warn "classic token: it cannot be limited to one repository, so it reaches every repo your account can"
-            fi
+            # A bot has no other kind of token to choose, so only the one who has a choice is warned.
+            [ -n "$BOT" ] || warn "classic token: it cannot be limited to one repository, so it reaches every repo your account can"
             note "scopes: ${scopes:-none reported}"
             risky=$(printf '%s\n' "$scopes" | tr -d ' ' | tr ',' '\n' | grep -E '^(admin:|delete_repo$|workflow$|delete:packages$)' | paste -sd, - || true)
             [ -z "$risky" ] || warn "it also carries powerful scopes the agent could use: $risky"
-            CLASSIC_DEFAULT=N; [ -z "$BOT" ] || CLASSIC_DEFAULT=Y
-            ask_def "  Use a classic token anyway?" "$CLASSIC_DEFAULT" 0 || die "create a fine-grained token limited to $REPO instead"
+            [ -n "$BOT" ] || ask_def "  Use a classic token anyway?" N 0 || die "create a fine-grained token limited to $REPO instead"
         else
             problem=$(token_problem "$TOKEN") || die "$problem"
             ok "push access, no Administration"
