@@ -312,39 +312,47 @@ for name in $STUB_NAMES; do
 done
 
 # Questions about things that are already set up default to No.
-TOKEN_DEFAULT=Y; TOKEN_NOTE=""
-EXISTING_TOKEN=""
-[ -f "$ENV_FILE" ] && EXISTING_TOKEN=$(grep '^CS_GITHUB_TOKEN=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true)
-if [[ "$EXISTING_TOKEN" == ghp_* ]]; then
-    if classic_token_problem "$EXISTING_TOKEN" >/dev/null; then
-        TOKEN_DEFAULT=N; TOKEN_NOTE=" (a classic token is already in $ENV_FILE; it reaches every repo your account can)"
-    fi
-elif [ -n "$EXISTING_TOKEN" ] && token_problem "$EXISTING_TOKEN" >/dev/null && [ "$(token_other_repos "$EXISTING_TOKEN")" = 0 ]; then
-    TOKEN_DEFAULT=N; TOKEN_NOTE=" (a valid token is already in $ENV_FILE)"
+# The token already in the env file, and whose it is, drive the defaults of the two questions below.
+STORED=""; STORED_OWNER=""; ADMIN_NOW=""
+[ -f "$ENV_FILE" ] && STORED=$(grep '^CS_GITHUB_TOKEN=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true)
+if [ -n "$STORED" ] && command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
+    STORED_OWNER=$(token_owner "$STORED"); ADMIN_NOW=$(gh api user --jq .login 2>/dev/null || true)
 fi
-unset EXISTING_TOKEN
-ask_def "  Create and store a GitHub token for $REPO?$TOKEN_NOTE" "$TOKEN_DEFAULT" 0 && DO_TOKEN=1
 
 # With the token on a second account, the agent cannot approve its own pull requests, so the
 # ruleset can require your approval. Without one, the token acts as you and can merge freely.
-BOT=""; BOT_DEFAULT=N; BOT_NOTE=""; BOT_SUGGEST=""
 # A token already stored on another account than yours means the bot is set up: default to yes, and
 # to that account's name.
-if command -v gh >/dev/null && gh auth status >/dev/null 2>&1 && [ -f "$ENV_FILE" ]; then
-    STORED=$(grep '^CS_GITHUB_TOKEN=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true)
-    if [ -n "$STORED" ]; then
-        STORED_OWNER=$(token_owner "$STORED"); ADMIN_NOW=$(gh api user --jq .login 2>/dev/null || true)
-        if [ -n "$STORED_OWNER" ] && [ -n "$ADMIN_NOW" ] && [ "$(lower "$STORED_OWNER")" != "$(lower "$ADMIN_NOW")" ]; then
-            BOT_DEFAULT=Y; BOT_SUGGEST=$STORED_OWNER; BOT_NOTE=" (the stored token belongs to $STORED_OWNER)"
-        fi
-    fi
-    unset STORED STORED_OWNER ADMIN_NOW
+BOT=""; BOT_DEFAULT=N; BOT_NOTE=""; BOT_SUGGEST=""
+if [ -n "$STORED_OWNER" ] && [ -n "$ADMIN_NOW" ] && [ "$(lower "$STORED_OWNER")" != "$(lower "$ADMIN_NOW")" ]; then
+    BOT_DEFAULT=Y; BOT_SUGGEST=$STORED_OWNER; BOT_NOTE=" (the stored token belongs to $STORED_OWNER)"
 fi
 if ask_def "  Use a separate bot account for the sandbox's token (so the agent cannot approve its own PRs)?$BOT_NOTE" "$BOT_DEFAULT" 0; then
     read -r -p "  The bot's GitHub username${BOT_SUGGEST:+ [$BOT_SUGGEST]}: " BOT
     BOT=${BOT:-$BOT_SUGGEST}
     [[ "$BOT" =~ ^[A-Za-z0-9-]+$ ]] || die "not a GitHub username: ${BOT:-(none)}"
 fi
+
+# The token question comes second so its default can follow the answer: with a bot, a token that
+# is not the bot's has to be replaced; without one, a token that works can stay.
+TOKEN_DEFAULT=Y; TOKEN_NOTE=""
+if [ -n "$BOT" ]; then
+    if [ -z "$STORED" ]; then
+        :
+    elif [ -n "$STORED_OWNER" ] && [ "$(lower "$STORED_OWNER")" = "$(lower "$BOT")" ]; then
+        TOKEN_DEFAULT=N; TOKEN_NOTE=" (the token in $ENV_FILE is $BOT's)"
+    else
+        TOKEN_NOTE=" (the token in $ENV_FILE belongs to ${STORED_OWNER:-an unknown account}, not $BOT)"
+    fi
+elif [[ "$STORED" == ghp_* ]]; then
+    if classic_token_problem "$STORED" >/dev/null; then
+        TOKEN_DEFAULT=N; TOKEN_NOTE=" (a classic token is already in $ENV_FILE; it reaches every repo your account can)"
+    fi
+elif [ -n "$STORED" ] && token_problem "$STORED" >/dev/null && [ "$(token_other_repos "$STORED")" = 0 ]; then
+    TOKEN_DEFAULT=N; TOKEN_NOTE=" (a valid token is already in $ENV_FILE)"
+fi
+unset STORED STORED_OWNER ADMIN_NOW
+ask_def "  Create and store a GitHub token for $REPO?$TOKEN_NOTE" "$TOKEN_DEFAULT" 0 && DO_TOKEN=1
 
 REGISTRY_DEFAULT=Y; REGISTRY_NOTE=""
 if grep -qs '"ghcr.io"' "$DOCKER_DIR/config.json"; then

@@ -275,7 +275,7 @@ for remote in git@git.corp.example:o/Demo-App.git https://git.corp.example/o/Dem
     check "${remote}: has no ghcr.io question" lacks "ghcr.io login for pushing"
 done
 ghe_project git@git.corp.example:o/Demo-App.git
-run_init 'y\nn\nn\n\n\n'
+run_init 'n\ny\nn\n\n\n'
 check "the token page is the Enterprise host's" mentions "https://git.corp.example/settings/personal-access-tokens/new"
 # A curl that logs its URLs and answers like a repo the token can read and push to, without Administration.
 cat > "${BIN}/curl" <<EOS
@@ -290,7 +290,7 @@ EOS
 chmod +x "${BIN}/curl"
 for remote in "git@git.corp.example:o/Demo-App.git|https://git.corp.example/api/v3/repos/o/Demo-App" "git@corp.ghe.com:o/Demo-App.git|https://api.corp.ghe.com/repos/o/Demo-App"; do
     ghe_project "${remote%%|*}"; : > "${RCURL}"
-    run_init 'y\nn\nn\n\ngithub_pat_x\n'
+    run_init 'n\ny\nn\n\ngithub_pat_x\n'
     check "${remote%%|*}: the token is checked against ${remote##*|}" contains "${RCURL}" "${remote##*|}"
     check "${remote%%|*}: push access is probed on the Enterprise host" contains "${RCURL}" "https://$(printf '%s' "${remote%%|*}" | sed -E 's#^git@([^:]+):.*#\1#')/o/Demo-App.git/info/refs"
 done
@@ -303,7 +303,7 @@ check "github.com: the ghcr.io question is still asked" mentions "ghcr.io login 
 
 ghe_project git@github.com:o/Demo-App.git
 printf '# x\nCS_GITHUB_HOST=git.corp.example\n' > "${WORK}/proj/.env"
-run_init 'y\nn\nn\n\n\n'
+run_init 'n\ny\nn\n\n\n'
 check "CS_GITHUB_HOST in .env overrides the remote's host" mentions "https://git.corp.example/settings/personal-access-tokens/new"
 
 # --- bot account, branch ruleset and tag ruleset ---------------------------------
@@ -358,7 +358,7 @@ check "...for v* tags, with the admin role able to bypass" has_posted '"include"
 check "...blocking creation, update and deletion" has_posted '{"type":"creation"},{"type":"update"},{"type":"deletion"}'
 
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
-run_init 'y\ny\ntartalebot\nn\ny\n\ngithub_pat_x\n'; rc=$?
+run_init 'y\ntartalebot\ny\nn\ny\n\ngithub_pat_x\n'; rc=$?
 check "a bot token is accepted when it belongs to the bot" test "${rc}" -eq 0
 check "...stored in the env file" contains "${WORK}/proj/.env" 'CS_GITHUB_TOKEN=github_pat_x'
 check "a collaborator with write access is not invited again" lacks "Invite it now"
@@ -368,22 +368,39 @@ check "...and is dismissed when new commits arrive" has_posted '"dismiss_stale_r
 check "the bot flow does not say the token can merge freely" lacks "can merge its own PRs"
 
 gh_world tartale '' '' ''; owner_curl tartalebot; new_project
-run_init 'y\ny\ntartalebot\nn\nn\ny\n\ngithub_pat_x\n'
+run_init 'y\ntartalebot\ny\nn\nn\ny\n\ngithub_pat_x\n'
 check "a bot that is not a collaborator can be invited with Write" ghlogged "api -X PUT repos/o/Demo-App/collaborators/tartalebot -f permission=push"
 
 gh_world tartale '' '' 'admin'; owner_curl tartalebot; new_project
-run_init 'y\ny\ntartalebot\nn\nn\n\ngithub_pat_x\n'
+run_init 'y\ntartalebot\ny\nn\nn\n\ngithub_pat_x\n'
 check "a bot with the admin role is warned about" mentions "give it the Write role instead"
 
 gh_world tartale '' '' 'write'; owner_curl tartale; new_project
-run_init 'y\ny\ntartalebot\nn\nn\n\ngithub_pat_x\n'; rc=$?
+run_init 'y\ntartalebot\ny\nn\nn\n\ngithub_pat_x\n'; rc=$?
 check "a token on the wrong account is refused" test "${rc}" -ne 0
 check "...naming both accounts" mentions "belongs to tartale, not tartalebot"
 check "...and not stored" test ! -f "${WORK}/proj/.env" -o "$(grep -c 'CS_GITHUB_TOKEN=github_pat_x' "${WORK}/proj/.env" 2>/dev/null)" = 0
 
+# The bot question comes first so the token question's default can follow the answer.
+gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
+printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
+run_init 'y\ntartalebot\n\nn\nn\n'
+check "with a bot, a stored token that is the bot's is kept by default" mentions "(the token in .env is tartalebot's)"
+check "...so no token step runs on Enter" lacks "Token for o/Demo-App"
+
+gh_world tartale '' '' 'write'; owner_curl tartale; new_project
+printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
+run_init 'y\ntartalebot\n\nn\nn\n\ngithub_pat_x\n'
+check "with a bot, a stored token on another account says so" mentions "(the token in .env belongs to tartale, not tartalebot)"
+check "...and Enter creates a new one" mentions "Token for o/Demo-App"
+
+gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
+run_init 'y\ntartalebot\n\nn\nn\n\n\n'
+check "with a bot and no stored token the token question defaults to yes" mentions "Token for o/Demo-App"
+
 # A bot's token is a classic one: a fine-grained token cannot reach a repo the bot only collaborates on.
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
-run_init 'y\ny\ntartalebot\nn\ny\n\nghp_abc\n\n'; rc=$?
+run_init 'y\ntartalebot\ny\nn\ny\n\nghp_abc\n\n'; rc=$?
 check "for a bot the token page is the classic one with the narrowest scope" mentions "settings/tokens/new?scopes=public_repo"
 check "...explaining why a fine-grained token will not do" mentions "cannot reach a repo that tartalebot only collaborates on"
 check "...and the warning says what the token reaches" mentions "it reaches every repo tartalebot can access"
@@ -392,25 +409,25 @@ check "...and the main ruleset then requires an approval" has_posted '"required_
 check "the bot flow does not show the fine-grained page" test "$(grep -c personal-access-tokens/new <<<"${OUT}")" -eq 0
 
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project; printf 'true' > "${GHD}/private"
-run_init 'y\ny\ntartalebot\nn\nn\n\nghp_abc\n\n'
+run_init 'y\ntartalebot\ny\nn\nn\n\nghp_abc\n\n'
 check "for a private repo the scope is repo" mentions "settings/tokens/new?scopes=repo&"
 
 # The bot question stands on its own: it is asked, and acted on, without creating a token.
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
 printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
-run_init 'n\ny\ntartalebot\nn\nn\n'
+run_init 'y\ntartalebot\nn\nn\nn\n'
 check "the bot question is asked even when no token is created" mentions "separate bot account"
 check "...checking the collaborator" mentions "tartalebot can write to o/Demo-App"
 check "...and that the stored token is the bot's" mentions "the stored token belongs to tartalebot"
 
 gh_world tartale '' '' 'write'; owner_curl tartale; new_project
 printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
-run_init 'n\ny\ntartalebot\nn\nn\n'
+run_init 'y\ntartalebot\nn\nn\nn\n'
 check "a stored token on the wrong account is reported" mentions "the stored token belongs to tartale, not tartalebot"
 check "...saying to create a new one as the bot" mentions "create it while signed in as tartalebot"
 
 gh_world tartale '' '' 'write'; new_project
-run_init 'n\ny\ntartalebot\nn\nn\n'
+run_init 'y\ntartalebot\nn\nn\nn\n'
 check "with no token stored it says to create one as the bot" mentions "no token is stored yet"
 
 new_project
@@ -421,23 +438,23 @@ rm -f "${BIN}/gh"; printf '#!/bin/sh\nexit 0\n' > "${BIN}/curl"
 # The bot question defaults to yes, with the account's name, when the stored token is another account's.
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
 printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
-run_init 'n\n\n\nn\nn\n'; rc=$?
+run_init '\n\nn\nn\nn\n'; rc=$?
 check "with a stored bot token the question says so" mentions "(the stored token belongs to tartalebot)"
 check "...and Enter accepts it, with the bot's name as the username" mentions "the stored token belongs to tartalebot"
 check "...so the bot account step runs" mentions "Bot account tartalebot"
 
 gh_world tartale '' '' 'write'; owner_curl tartale; new_project
 printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
-run_init 'n\n\nn\nn\n'
+run_init '\nn\nn\nn\n'
 check "a stored token on your own account leaves the default at no" lacks "Bot account"
 check "...and does not name an account in the question" lacks "(the stored token belongs to"
 
 gh_world tartale '' '' 'write'; owner_curl tartale; new_project
-run_init 'n\n\nn\nn\n'
+run_init '\nn\nn\nn\n'
 check "with no stored token the default is no" lacks "Bot account"
 rm -f "${BIN}/gh"; owner_curl tartalebot
 printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"; new_project; printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
-run_init 'n\n\nn\nn\n'; rc=$?
+run_init '\nn\nn\nn\n'; rc=$?
 check "without gh the default is no, and nothing breaks" test "${rc}" -eq 0
 printf '#!/bin/sh\nexit 0\n' > "${BIN}/curl"
 
@@ -474,7 +491,7 @@ check "--yes skips the token, which needs a pasted secret" lacks "Paste the toke
 
 # A paste wrapped in bracketed-paste markers is judged by the token inside.
 new_project
-run_init 'y\nn\nn\nn\n\n\033[200~github_pat_abc\033[201~\n'; rc=$?
+run_init 'n\ny\nn\nn\n\n\033[200~github_pat_abc\033[201~\n'; rc=$?
 check "bracketed-paste markers are stripped from a pasted token" mentions "token cannot read"
 
 # --- classic tokens --------------------------------------------------------------
@@ -492,7 +509,7 @@ EOS
 ENVF="${WORK}/proj/.env"
 classic_curl 200 "repo"
 new_project
-run_init 'y\nn\nn\nn\n\nghp_abc\nn\n'; rc=$?
+run_init 'n\ny\nn\nn\n\nghp_abc\nn\n'; rc=$?
 check "a classic token is warned about" mentions "reaches every repo your account can"
 check "...with the scopes it carries" mentions "scopes: repo"
 check "...and refused when you decline" test "${rc}" -ne 0
@@ -501,7 +518,7 @@ no_token_stored() { [ ! -f "${ENVF}" ] || ! grep -qF ghp_abc "${ENVF}"; }
 check "...storing nothing" no_token_stored
 
 new_project
-run_init 'y\nn\nn\nn\n\nghp_abc\ny\n'; rc=$?
+run_init 'n\ny\nn\nn\n\nghp_abc\ny\n'; rc=$?
 check "a classic token is stored when you accept" test "${rc}" -eq 0
 check "...in the env file" contains "${ENVF}" 'CS_GITHUB_TOKEN=ghp_abc'
 check "...with a comment that says what a classic token is" contains "${ENVF}" '# Classic GitHub token'
@@ -510,12 +527,12 @@ check "the env file stays private" mode_is "${ENVF}" 600
 
 classic_curl 200 "repo, workflow, admin:org"
 new_project
-run_init 'y\nn\nn\nn\n\nghp_abc\ny\n'
+run_init 'n\ny\nn\nn\n\nghp_abc\ny\n'
 check "powerful scopes are called out" mentions "powerful scopes the agent could use: workflow,admin:org"
 
 classic_curl 403 "repo"
 new_project
-run_init 'y\nn\nn\nn\n\nghp_abc\ny\n'; rc=$?
+run_init 'n\ny\nn\nn\n\nghp_abc\ny\n'; rc=$?
 check "a classic token that cannot push is rejected" mentions "token cannot push to o/Demo-App"
 check "...without asking to continue" lacks "Use a classic token anyway"
 
