@@ -35,7 +35,7 @@ It asks everything up front, then creates:
   CS_REF=latest /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs init
   ```
 - `.envrc-cs`, with the launcher settings (each with a comment saying what it does), and a `source_env .envrc-cs` line in `.envrc`; and a marked block of `CS_` entries in `.env`. Entries are kept in alphabetical order, and nothing else in either file is touched (see [Configure](#configure)).
-- Optionally: a fine-grained GitHub token for `git` and `gh` in the sandbox (a classic token is accepted after a warning), a package-only `ghcr.io` login, and a `main` branch ruleset (needs `gh` logged in as a repo admin).
+- Optionally: a fine-grained GitHub token for `git` and `gh` in the sandbox (a classic token is accepted after a warning), a package-only `ghcr.io` login, and the `main` branch and `v*` tag rulesets (needs `gh` logged in as a repo admin). If the token is for a separate bot account, the `main` ruleset requires your approval; an existing ruleset is only ever made stricter, after you agree.
 
 `--yes` and `--no` answer the yes/no questions for runs with nobody at the keyboard; the token and registry login need a pasted secret, so both skip them. From the one-liner, put them after the command string with a placeholder first:
 

@@ -51,7 +51,7 @@ stage-plugins|Development|Stage PLUGINS for a build'
 usage_init() { echo "Usage: cs init [--yes | --no]
 
   Set up the current project: the .claude/sandbox stubs, .envrc-cs and .env entries, an
-  optional GitHub token, ghcr.io login and branch ruleset. Run it on the host, from the
+  optional GitHub token (for you or a separate bot account), ghcr.io login and the branch and tag rulesets. Run it on the host, from the
   project root. --yes and --no answer the yes/no questions for unattended runs."; }
 usage_build() { echo "Usage: cs build [--no-push]
 

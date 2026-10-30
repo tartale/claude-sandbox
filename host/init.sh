@@ -17,7 +17,8 @@ cs init [--yes | --no]   (asks as it goes; --yes or --no answers the yes/no ques
     CS_GITHUB_HOST in the environment or .env (written to .env as CS_GITHUB_HOST)
   - adds CS_USER_CONFIG_REPO (pre-filled) and CS_USER_CONFIG_TOKEN to .env, commented out
   - optionally stores a package-only ghcr.io login in ~/.docker-sandbox
-  - optionally creates a "main" branch ruleset (needs gh)
+  - optionally sets up the "main" branch ruleset and a ruleset for v* tags (needs gh as a repo admin);
+    when the token is for a separate bot account, "main" requires your approval
 
   --yes   answer yes: an edited stub is replaced (after a backup) and the ruleset is created
           when that is possible; the token and registry login need a secret pasted in, so
@@ -149,6 +150,10 @@ token_other_repos() {
 }
 
 http_code() { sed -n '1s/^HTTP[^ ]* \([0-9]*\).*/\1/p'; }
+
+# The login of the account a token belongs to.
+token_owner() { gh_get "$1" "/user" | grep -o '"login": *"[^"]*"' | head -n 1 | cut -d'"' -f4 || true; }
+lower() { printf '%s' "$1" | tr 'A-Z' 'a-z'; }
 
 [ -d /workspace ] && [ -S /var/run/docker.sock ] && [ -n "${CUID:-}" ] && die "run this on the host, not inside the sandbox"
 
@@ -339,8 +344,6 @@ elif REPO_INFO=$(gh api "repos/$REPO" --jq '[.private, .permissions.admin] | @ts
     # itself is not reliably readable, so a private repo only gets a warning).
     if [ "${REPO_INFO##*$'\t'}" != true ]; then
         RULESET_DEFAULT=N; RULESET_NOTE=" (you are not an admin of $REPO)"
-    elif gh api "repos/$REPO/rulesets" --jq '.[].name' 2>/dev/null | grep -qx main; then
-        RULESET_DEFAULT=N; RULESET_NOTE=" (a 'main' ruleset already exists)"
     elif [ "${REPO_INFO%%$'\t'*}" = true ]; then
         RULESET_DEFAULT=N; RULESET_NOTE=" (private repo: needs a paid GitHub plan; may fail)"
     fi
@@ -348,7 +351,7 @@ else
     RULESET_NOTE=" (could not read $REPO with gh; it may need 'gh auth login')"
 fi
 RULESET_YES_OK=0; [ "$HAVE_GH" = 1 ] && [ "$RULESET_DEFAULT" = Y ] && RULESET_YES_OK=1
-if ask_def "  Create a 'main' ruleset on $REPO?$RULESET_NOTE" "$RULESET_DEFAULT" "$RULESET_YES_OK"; then
+if ask_def "  Set up the 'main' branch ruleset and the release-tag ruleset on $REPO?$RULESET_NOTE" "$RULESET_DEFAULT" "$RULESET_YES_OK"; then
     [ "$HAVE_GH" = 1 ] || die "install gh (commands above), then rerun"
     gh auth status >/dev/null 2>&1 || die $'sign in to gh as a repo admin, then rerun:\n\n      gh auth login'
     DO_RULESET=1
@@ -545,6 +548,30 @@ if [ "$DO_TOKEN" = 1 ]; then
     note "permissions (Contents, Pull requests, Issues: RW). No Administration or Workflows."
     note "$URL"
     note "If a fine-grained token cannot be used, a classic token (ghp_) is accepted after a warning."
+    # With the token on a second account, the agent cannot approve its own pull requests, so the
+    # ruleset can require your approval. Without one, the token acts as you and can merge freely.
+    BOT=""
+    if ask_def "  Is this token for a separate bot account (so the agent cannot approve its own PRs)?" N 0; then
+        read -r -p "  The bot's GitHub username: " BOT
+        [[ "$BOT" =~ ^[A-Za-z0-9-]+$ ]] || die "not a GitHub username: $BOT"
+        note "Sign in as $BOT (a private window) before opening the token page."
+        if [ "$HAVE_GH" = 1 ] && gh auth status >/dev/null 2>&1; then
+            perm=$(gh api "repos/$REPO/collaborators/$BOT/permission" --jq .permission 2>/dev/null || true)
+            case "$perm" in
+                write|maintain) ok "$BOT can write to $REPO" ;;
+                admin) warn "$BOT is an admin of $REPO: give it the Write role instead, or it can bypass the rules" ;;
+                *) if ask_def "  $BOT is not a collaborator with write access. Invite it now?" Y 0; then
+                       gh api -X PUT "repos/$REPO/collaborators/$BOT" -f permission=push >/dev/null \
+                           && ok "invited $BOT with Write; accept the invitation as $BOT" \
+                           || warn "could not invite $BOT; add it under Settings, Collaborators"
+                   else
+                       note "add $BOT with the Write role under Settings, Collaborators"
+                   fi ;;
+            esac
+        else
+            note "gh is not signed in: add $BOT with the Write role under Settings, Collaborators"
+        fi
+    fi
     read -r -p "  Press Enter to open it (Ctrl-C to stop)... " _
     (command -v open >/dev/null && open "$URL") || (command -v xdg-open >/dev/null && xdg-open "$URL") || warn "could not open a browser; use the link above"
 
@@ -572,6 +599,10 @@ if [ "$DO_TOKEN" = 1 ]; then
                 ok "no other private repos reachable"
             fi
             note "Workflows permission cannot be probed; confirm it is off."
+        fi
+        TOKEN_OWNER=$(token_owner "$TOKEN")
+        if [ -n "$BOT" ] && [ "$(lower "$TOKEN_OWNER")" != "$(lower "$BOT")" ]; then
+            die "the token belongs to ${TOKEN_OWNER:-an unknown account}, not $BOT: sign in as $BOT, create the token there, and run init.sh again"
         fi
         ( umask 077
           touch "$ENV_FILE"
@@ -654,27 +685,71 @@ if [ "$DO_REGISTRY" = 1 ]; then
     cmd "LABEL org.opencontainers.image.source=\"https://$GITHUB_HOST/$REPO\""
 fi
 
-# --- branch ruleset ----------------------------------------------------------
+# --- rulesets -----------------------------------------------------------------
+# The "main" branch ruleset (a pull request is required; one approval too when the sandbox token
+# belongs to a different account than yours, because that account cannot approve its own pull
+# requests) and a ruleset on v* tags. An existing "main" ruleset is only ever made stricter, and
+# only after you agree.
+pr_params() {   # APPROVALS
+    local fresh=false; [ "$1" -gt 0 ] && fresh=true
+    printf '{"required_approving_review_count":%s,"dismiss_stale_reviews_on_push":%s,"require_code_owner_review":false,"require_last_push_approval":%s,"required_review_thread_resolution":false}' "$1" "$fresh" "$fresh"
+}
 if [ "$DO_RULESET" = 1 ]; then
-    say "Branch ruleset"
-    if gh api "repos/$REPO/rulesets" --jq '.[].name' | grep -qx main; then
-        note "ruleset 'main' already exists; left alone"
-    else
-        if RULESET_ERR=$(gh api -X POST "repos/$REPO/rulesets" --input - 2>&1 >/dev/null <<'JSON'
-{"name":"main","target":"branch","enforcement":"active","bypass_actors":[],
- "conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]}},
- "rules":[{"type":"deletion"},{"type":"non_fast_forward"},
-  {"type":"pull_request","parameters":{"required_approving_review_count":0,
-   "dismiss_stale_reviews_on_push":false,"require_code_owner_review":false,
-   "require_last_push_approval":false,"required_review_thread_resolution":false}}]}
-JSON
-        ); then
-            ok "ruleset created (add required status checks once CI exists)"
-            note "it requires a PR but no approval: the sandbox token can merge its own PRs"
+    say "Rulesets"
+    ADMIN_LOGIN=$(gh api user --jq .login 2>/dev/null || true)
+    if [ -z "${TOKEN_OWNER:-}" ] && [ -f "$ENV_FILE" ]; then
+        STORED=$(grep '^CS_GITHUB_TOKEN=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true)
+        TOKEN_OWNER=""; [ -z "$STORED" ] || TOKEN_OWNER=$(token_owner "$STORED")
+        unset STORED
+    fi
+    APPROVALS=0
+    if [ -n "${TOKEN_OWNER:-}" ] && [ -n "$ADMIN_LOGIN" ] && [ "$(lower "$TOKEN_OWNER")" != "$(lower "$ADMIN_LOGIN")" ]; then APPROVALS=1; fi
+    RULESETS=$(gh api "repos/$REPO/rulesets" --jq '.[] | [.id, .name] | @tsv' 2>/dev/null || true)
+    MAIN_ID=$(awk -F'\t' '$2 == "main" { print $1; exit }' <<<"$RULESETS")
+    TAGS_ID=$(awk -F'\t' '$2 == "release tags" { print $1; exit }' <<<"$RULESETS")
+
+    if [ -z "$MAIN_ID" ]; then
+        BODY=$(printf '{"name":"main","target":"branch","enforcement":"active","bypass_actors":[],"conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]}},"rules":[{"type":"deletion"},{"type":"non_fast_forward"},{"type":"pull_request","parameters":%s}]}' "$(pr_params "$APPROVALS")")
+        if RULESET_ERR=$(printf '%s' "$BODY" | gh api -X POST "repos/$REPO/rulesets" --input - 2>&1 >/dev/null); then
+            ok "branch ruleset created (add required status checks once CI exists)"
         else
-            warn "GitHub refused to create the ruleset; everything else is done"
+            warn "GitHub refused to create the branch ruleset; everything else is done"
             note "$(printf '%s' "$RULESET_ERR" | head -n 2)"
         fi
+    else
+        CUR=$(gh api "repos/$REPO/rulesets/$MAIN_ID" --jq '.rules[] | select(.type == "pull_request") | .parameters | [.required_approving_review_count, .dismiss_stale_reviews_on_push, .require_last_push_approval] | @tsv' 2>/dev/null || true)
+        IFS=$'\t' read -r CUR_N CUR_DISMISS CUR_LAST <<<"$CUR"
+        if [ "$APPROVALS" -gt "${CUR_N:-0}" ] || { [ "$APPROVALS" -gt 0 ] && { [ "${CUR_DISMISS:-}" != true ] || [ "${CUR_LAST:-}" != true ]; }; }; then
+            note "the 'main' ruleset requires ${CUR_N:-0} approval(s); the sandbox token belongs to ${TOKEN_OWNER}, not to you"
+            note "wanted: $APPROVALS approval, dismissed when new commits are pushed, counted only after the last push"
+            if ask_def "  Update the 'main' ruleset?" Y 1; then
+                if gh api "repos/$REPO/rulesets/$MAIN_ID" --jq '{name,target,enforcement,bypass_actors,conditions,rules} | (.rules[] | select(.type == "pull_request") | .parameters) += {"required_approving_review_count":'"$APPROVALS"',"dismiss_stale_reviews_on_push":true,"require_last_push_approval":true}' \
+                        | gh api -X PUT "repos/$REPO/rulesets/$MAIN_ID" --input - >/dev/null 2>&1; then
+                    ok "'main' ruleset now requires $APPROVALS approval after the last push"
+                else
+                    warn "GitHub refused to update the 'main' ruleset"
+                fi
+            fi
+        else
+            note "ruleset 'main' already as strict as wanted; left alone"
+        fi
+    fi
+    if [ "$APPROVALS" = 0 ]; then
+        note "no approval is required: the sandbox token acts as you and can merge its own PRs."
+        note "To require yours, run init.sh again and say the token is for a separate bot account."
+    fi
+
+    if [ -z "$TAGS_ID" ]; then
+        TAG_BODY='{"name":"release tags","target":"tag","enforcement":"active","bypass_actors":[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"always"}],"conditions":{"ref_name":{"include":["refs/tags/v*"],"exclude":[]}},"rules":[{"type":"creation"},{"type":"update"},{"type":"deletion"}]}'
+        if RULESET_ERR=$(printf '%s' "$TAG_BODY" | gh api -X POST "repos/$REPO/rulesets" --input - 2>&1 >/dev/null); then
+            ok "tag ruleset created: only repo admins can create, move or delete v* tags"
+            note "check the sandbox token is bound by it: 'git push origin HEAD:refs/tags/v0.0.0-probe' must be refused (docs/security.md)"
+        else
+            warn "GitHub refused to create the tag ruleset"
+            note "$(printf '%s' "$RULESET_ERR" | head -n 2)"
+        fi
+    else
+        note "ruleset 'release tags' already exists; left alone"
     fi
 fi
 
