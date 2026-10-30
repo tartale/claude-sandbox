@@ -318,7 +318,7 @@ echo "gh \$*" >> "\$D/log"
 case "\$*" in
     "auth status"*) exit 0 ;;
     "api user --jq .login") cat "\$D/admin" ;;
-    "api repos/o/Demo-App --jq "*) printf 'false\ttrue\n' ;;
+    "api repos/o/Demo-App --jq "*) printf '%s\ttrue\n' "\$(cat "\$D/private" 2>/dev/null || echo false)" ;;
     "api repos/o/Demo-App/rulesets --jq "*) cat "\$D/rulesets" ;;
     "api repos/o/Demo-App/rulesets/7 --jq "*"@tsv") cat "\$D/pr" ;;
     "api repos/o/Demo-App/rulesets/7 --jq "*) echo '{"updated":"payload"}' ;;
@@ -337,7 +337,7 @@ case "\$*" in
     *info/refs*) printf 200 ;;
     *actions/permissions*) printf 'HTTP/2 404\r\n\r\n{}' ;;
     *user/repos*) printf 'HTTP/2 200\r\n\r\n[]' ;;
-    */user*) printf 'HTTP/2 200\r\n\r\n{"login":"$1"}' ;;
+    */user*) printf 'HTTP/2 200\r\nX-OAuth-Scopes: public_repo\r\n\r\n{"login":"$1"}' ;;
     *api*) printf 'HTTP/2 200\r\n\r\n{}' ;;
 esac
 EOS
@@ -380,6 +380,20 @@ run_init 'y\ny\ntartalebot\nn\nn\n\ngithub_pat_x\n'; rc=$?
 check "a token on the wrong account is refused" test "${rc}" -ne 0
 check "...naming both accounts" mentions "belongs to tartale, not tartalebot"
 check "...and not stored" test ! -f "${WORK}/proj/.env" -o "$(grep -c 'CS_GITHUB_TOKEN=github_pat_x' "${WORK}/proj/.env" 2>/dev/null)" = 0
+
+# A bot's token is a classic one: a fine-grained token cannot reach a repo the bot only collaborates on.
+gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
+run_init 'y\ny\ntartalebot\nn\ny\n\nghp_abc\n\n'; rc=$?
+check "for a bot the token page is the classic one with the narrowest scope" mentions "settings/tokens/new?scopes=public_repo"
+check "...explaining why a fine-grained token will not do" mentions "cannot reach a repo that tartalebot only collaborates on"
+check "...and the warning says what the token reaches" mentions "it reaches every repo tartalebot can access"
+check "...with the bot as the answer's default, Enter accepts the classic token" contains "${WORK}/proj/.env" 'CS_GITHUB_TOKEN=ghp_abc'
+check "...and the main ruleset then requires an approval" has_posted '"required_approving_review_count":1'
+check "the bot flow does not show the fine-grained page" test "$(grep -c personal-access-tokens/new <<<"${OUT}")" -eq 0
+
+gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project; printf 'true' > "${GHD}/private"
+run_init 'y\ny\ntartalebot\nn\nn\n\nghp_abc\n\n'
+check "for a private repo the scope is repo" mentions "settings/tokens/new?scopes=repo&"
 
 # The bot question stands on its own: it is asked, and acted on, without creating a token.
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
