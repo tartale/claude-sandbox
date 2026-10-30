@@ -113,7 +113,7 @@ Everything above runs through `cs`, which needs no installation. From a checkout
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs --help
 ```
 
-`cs --help` lists the commands and `cs COMMAND --help` shows each one's options. The `.claude/sandbox` scripts in a project are thin wrappers that hand the project to `cs build`, `cs run`, `cs start`, `cs restart` and `cs sync`.
+`cs --help` lists the commands and `cs COMMAND --help` shows each one's options. The owner commands (`cs pr`, `cs release`) approve and merge pull requests and tag and approve releases; see [Security](docs/security.md#owner-commands). The `.claude/sandbox` scripts in a project are thin wrappers that hand the project to `cs build`, `cs run`, `cs start`, `cs restart` and `cs sync`.
 
 ## More
 

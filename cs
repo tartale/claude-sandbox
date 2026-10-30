@@ -23,7 +23,7 @@ if [ -z "${CS_ROOT:-}" ]; then
         trap 'rm -rf "$tree"' EXIT
         curl -fsSL "https://codeload.github.com/${CS_REPO}/tar.gz/${ref}" | tar -xz --strip-components=1 -C "$tree"
         rc=0
-        CS_ROOT="$tree" bash "$tree/cs" "$@" || rc=$?
+        CS_FETCHED=1 CS_ROOT="$tree" bash "$tree/cs" "$@" || rc=$?
         exit "$rc"
     fi
 fi
@@ -39,6 +39,8 @@ start|Project|Start the project sandbox in the background
 restart|Project|Rebuild the image and restart the background sandbox
 sync|Project|Apply the user-scope patch a session wrote
 network|Host|Set up, check and remove the sandbox network
+pr|Owner|List, approve and merge pull requests (as the repo owner)
+release|Owner|Tag a release and approve its publish (as the repo owner)
 test|Development|Run the tests in tests/
 image|Development|Build the base image for this machine (no push)
 push|Development|Build the base image for amd64 and arm64 and push it
@@ -75,6 +77,17 @@ usage_network() { echo "Usage: cs network setup bridge|macvlan|ipvlan [OPTIONS] 
 
   Set up the sandbox network, once per host. See docs/security.md. Run cs network without
   arguments for every option."; }
+usage_pr() { echo "Usage: cs pr list | approve N [--yes] | merge N [--yes]
+
+  As the repo owner, with gh signed in as the admin (not the sandbox's bot): list the open pull
+  requests, approve one (after its author, checks and files are shown), or merge an approved one.
+  --yes skips the question. --repo OWNER/NAME names the repository (default: the current directory's).
+  Run from a checkout (./cs): these act with your admin login, so they do not run from a download."; }
+usage_release() { echo "Usage: cs release tag vX.Y.Z [--yes] | approve [vX.Y.Z] [--yes]
+
+  As the repo owner: tag the default branch's latest commit as a release (the tag ruleset lets only you
+  do it), then approve the release run that waits for you. --yes skips the question. --repo OWNER/NAME
+  names the repository. Run from a checkout (./cs), not a download."; }
 usage_test() { echo "Usage: cs test
 
   Run every script in tests/ (needs a checkout)."; }
@@ -109,7 +122,7 @@ print_help() {
     echo "Options:"
     echo "  --help  Show this message and exit."
     local group g name rest
-    for g in Project Host Development; do
+    for g in Project Host Owner Development; do
         echo
         echo "$g commands:"
         while IFS='|' read -r name group rest; do
@@ -182,6 +195,6 @@ case "${1:-}" in
     -h|--help) "usage_${cmd//-/_}"; exit 0 ;;
 esac
 case "$cmd" in
-    init|build|run|start|restart|sync|network) exec bash "$HOST/$cmd.sh" "$@" ;;
+    init|build|run|start|restart|sync|network|pr|release) exec bash "$HOST/$cmd.sh" "$@" ;;
     *) "cmd_${cmd//-/_}" "$@" ;;
 esac

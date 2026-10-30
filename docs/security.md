@@ -214,7 +214,7 @@ The sandbox token acts as your account, so the agent can approve nothing and mer
    ```
 
    Run it from the project, with your admin `gh` login.
-4. From now on you approve each PR in GitHub (a review as yourself) and then merge it, or have the agent merge it. The bot cannot approve its own PR, and a push after your approval needs a new one.
+4. From now on you approve each PR (in GitHub, or with `cs pr approve N`, which shows the title, author, checks and changed files first) and then merge it (`cs pr merge N`), or have the agent merge it. The bot cannot approve its own PR, and a push after your approval needs a new one.
 
 To check it from the sandbox, open a PR, then try `gh pr merge <number> --merge`: it should be refused until you have approved. Keep `bypass_actors` empty, or the admin role can merge without approval. The bot account is as sensitive as the agent: never give it Administration, and use two-factor authentication on it.
 
@@ -244,3 +244,29 @@ What UniFi can do about it:
 (This comes from UniFi's help center and forum as found by search, because the help pages could not be fetched when this was written: check it against your version.)
 
 To close the leak anyway, run a small DNS server for the sandbox, such as dnsmasq on the NAS. It answers only your allowed names and refuses everything else. Point the sandbox at it with `--dns` in `CS_DOCKER_FLAGS`, and make the UniFi rule let the sandbox range use DNS only at that server. One thing to test: the domain-based firewall rules depend on the gateway seeing the lookups, which a server that forwards the allowed names to the gateway still lets it do, but confirm the allowed hosts keep working.
+
+### Owner commands
+
+`cs pr` and `cs release` do the owner's steps of the gate, so they are one command each:
+
+```bash
+./cs pr list
+```
+
+```bash
+./cs pr approve 123
+```
+
+```bash
+./cs pr merge 123
+```
+
+```bash
+./cs release tag v1.2.3
+```
+
+```bash
+./cs release approve v1.2.3
+```
+
+`approve` and `merge` show the pull request's title, author, review state, checks and changed files first, refuse while checks are running or failing (and your own pull requests), and ask before acting; `--yes` skips the question. `release tag` shows the commit it will tag, and the tag needs the `release tags` ruleset to let you bypass it (`init.sh` sets that up). `release approve` approves the release run that waits for you. They use the repository of the current directory (`--repo OWNER/NAME` to name another) and need `gh` signed in as the repo's admin: not the sandbox's bot, which cannot approve its own pull requests. They act with your admin login, so they run only from a checkout you have reviewed (`./cs`), never from the downloaded one-liner.
