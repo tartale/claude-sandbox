@@ -404,6 +404,29 @@ run_init "" "${ROOT}/host/init.sh --yes"
 check "--yes answers the bot question no, without asking for a username" lacks "The bot's GitHub username"
 rm -f "${BIN}/gh"; printf '#!/bin/sh\nexit 0\n' > "${BIN}/curl"
 
+# The bot question defaults to yes, with the account's name, when the stored token is another account's.
+gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
+printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
+run_init 'n\n\n\nn\nn\n'; rc=$?
+check "with a stored bot token the question says so" mentions "(the stored token belongs to tartalebot)"
+check "...and Enter accepts it, with the bot's name as the username" mentions "the stored token belongs to tartalebot"
+check "...so the bot account step runs" mentions "Bot account tartalebot"
+
+gh_world tartale '' '' 'write'; owner_curl tartale; new_project
+printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
+run_init 'n\n\nn\nn\n'
+check "a stored token on your own account leaves the default at no" lacks "Bot account"
+check "...and does not name an account in the question" lacks "(the stored token belongs to"
+
+gh_world tartale '' '' 'write'; owner_curl tartale; new_project
+run_init 'n\n\nn\nn\n'
+check "with no stored token the default is no" lacks "Bot account"
+rm -f "${BIN}/gh"; owner_curl tartalebot
+printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"; new_project; printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
+run_init 'n\n\nn\nn\n'; rc=$?
+check "without gh the default is no, and nothing breaks" test "${rc}" -eq 0
+printf '#!/bin/sh\nexit 0\n' > "${BIN}/curl"
+
 # An existing main ruleset is made stricter only, and only when the stored token is a bot's.
 gh_world tartale '7\tmain\n8\trelease tags\n' '0\tfalse\tfalse\n' ''; owner_curl tartalebot; new_project
 printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
