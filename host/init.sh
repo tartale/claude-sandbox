@@ -796,16 +796,25 @@ if [ "$DO_RULESET" = 1 ]; then
         note "To require yours, run init.sh again, say the sandbox uses a separate bot account, and create its token as that account."
     fi
 
+    # Who may create v* tags despite the ruleset: you. A repository an organization owns takes the
+    # admin role; one a user owns takes that user (GitHub drops a role bypass there).
+    ADMIN_ID=$(gh api user --jq .id 2>/dev/null || true)
+    OWNER_TYPE=$(gh api "repos/$REPO" --jq .owner.type 2>/dev/null || true)
+    BYPASS=""; WHO=""
+    if [ "$OWNER_TYPE" = Organization ]; then
+        BYPASS='{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"always"}'; WHO="repo admins"
+    elif [ -n "$ADMIN_ID" ]; then
+        BYPASS=$(printf '{"actor_id":%s,"actor_type":"User","bypass_mode":"always"}' "$ADMIN_ID"); WHO=$ADMIN_LOGIN
+    fi
     if [ -z "$TAGS_ID" ]; then
-        TAG_BODY='{"name":"release tags","target":"tag","enforcement":"active","bypass_actors":[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"always"}],"conditions":{"ref_name":{"include":["refs/tags/v*"],"exclude":[]}},"rules":[{"type":"creation"},{"type":"update"},{"type":"deletion"}]}'
+        TAG_BODY=$(printf '{"name":"release tags","target":"tag","enforcement":"active","bypass_actors":[%s],"conditions":{"ref_name":{"include":["refs/tags/v*"],"exclude":[]}},"rules":[{"type":"creation"},{"type":"update"},{"type":"deletion"}]}' "$BYPASS")
         if TAG_OUT=$(printf '%s' "$TAG_BODY" | gh api -X POST "repos/$REPO/rulesets" --input - --jq '(.bypass_actors // []) | length' 2>&1); then
             ok "tag ruleset created for v* tags"
             if [ "$TAG_OUT" = 0 ]; then
-                # A repository owned by a user, not an organization, keeps no bypass actor.
-                note "GitHub stored no bypass for it (a personal repo has none): nobody can create a v* tag"
-                note "until you disable the 'release tags' ruleset under Settings, Rules, and enable it again after"
+                warn "GitHub kept no bypass for it: nobody can create a v* tag until you disable the 'release tags' ruleset"
+                note "under Settings, Rules, and enable it again after"
             else
-                note "repo admins can still create, move or delete v* tags"
+                note "${WHO:-repo admins} can still create, move or delete v* tags"
             fi
             note "check the sandbox token is bound by it: 'git push origin HEAD:refs/tags/v0.0.0-probe' must be refused (docs/security.md)"
         else
@@ -814,7 +823,20 @@ if [ "$DO_RULESET" = 1 ]; then
             note "$(printf '%s' "$TAG_ERR" | head -n 2)"
         fi
     else
-        note "ruleset 'release tags' already exists; left alone"
+        TAG_BYP=$(gh api "repos/$REPO/rulesets/$TAGS_ID" --jq '(.bypass_actors // []) | length' 2>/dev/null || true)
+        if [ "$TAG_BYP" = 0 ] && [ -n "$BYPASS" ]; then
+            note "the 'release tags' ruleset has no bypass: nobody, you included, can create a v* tag"
+            if ask_def "  Let $WHO create v* tags (add the bypass)?" Y 1; then
+                if NEW_BYP=$(gh api "repos/$REPO/rulesets/$TAGS_ID" --jq '{name,target,enforcement,conditions,rules} + {bypass_actors:['"$BYPASS"']}' \
+                        | gh api -X PUT "repos/$REPO/rulesets/$TAGS_ID" --input - --jq '(.bypass_actors // []) | length' 2>&1) && [ "$NEW_BYP" != 0 ]; then
+                    ok "$WHO can now create v* tags"
+                else
+                    warn "GitHub kept no bypass: nobody can create a v* tag until you disable the 'release tags' ruleset"
+                fi
+            fi
+        else
+            note "ruleset 'release tags' already exists; left alone"
+        fi
     fi
 fi
 

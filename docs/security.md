@@ -220,19 +220,13 @@ To check it from the sandbox, open a PR, then try `gh pr merge <number> --merge`
 
 ### Tags
 
-`release.yml` runs on any `v*` tag but waits for your approval (the `release` environment), so a tag the agent pushes cannot publish. `init.sh` also adds a ruleset that stops the agent creating, moving or deleting those tags (the rulesets step needs your admin `gh` login). On a repository an organization owns, the admin role can bypass it, so you can still tag a release. On a repository a user owns, GitHub keeps no bypass actor, so nobody can create a `v*` tag until you disable the `release tags` ruleset (Settings, Rules, Rulesets) and enable it again afterwards; `init.sh` says which case you are in. By hand:
+`release.yml` runs on any `v*` tag but waits for your approval (the `release` environment), so a tag the agent pushes cannot publish. `init.sh` also adds a ruleset that stops the agent creating, moving or deleting those tags (the rulesets step needs your admin `gh` login), with you as the one bypass so you can still tag a release. On a repository an organization owns the bypass is the admin role; on a repository a user owns it is that user, because GitHub drops a role bypass there. The bot is a different user, so it stays bound. Run `init.sh` again to add the bypass to a ruleset that lacks one; it asks first. By hand (this is the personal-repo form):
 
 ```bash
-R=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-gh api -X POST "repos/$R/rulesets" --input - <<'JSON'
-{"name":"release tags","target":"tag","enforcement":"active",
- "bypass_actors":[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"always"}],
- "conditions":{"ref_name":{"include":["refs/tags/v*"],"exclude":[]}},
- "rules":[{"type":"creation"},{"type":"update"},{"type":"deletion"}]}
-JSON
+R=$(gh repo view --json nameWithOwner -q .nameWithOwner) && ME=$(gh api user --jq .id) && printf '{"name":"release tags","target":"tag","enforcement":"active","bypass_actors":[{"actor_id":%s,"actor_type":"User","bypass_mode":"always"}],"conditions":{"ref_name":{"include":["refs/tags/v*"],"exclude":[]}},"rules":[{"type":"creation"},{"type":"update"},{"type":"deletion"}]}' "$ME" | gh api -X POST "repos/$R/rulesets" --input -
 ```
 
-Check from the sandbox: `git push origin HEAD:refs/tags/v0.0.0-probe` must be refused. If it succeeds, the sandbox token inherits an admin bypass: delete the probe (`git push origin --delete v0.0.0-probe`) and remove the `bypass_actors` entry, then tag releases by briefly disabling the ruleset.
+Check from the sandbox: `git push origin HEAD:refs/tags/v0.0.0-probe` must be refused. If it succeeds, the sandbox token is not bound (it acts as the bypass user): delete the probe (`git push origin --delete v0.0.0-probe`) and fix the token's account.
 
 ### The base image
 

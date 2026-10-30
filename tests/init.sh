@@ -318,9 +318,14 @@ echo "gh \$*" >> "\$D/log"
 case "\$*" in
     "auth status"*) exit 0 ;;
     "api user --jq .login") cat "\$D/admin" ;;
+    "api user --jq .id") echo 101 ;;
+    "api repos/o/Demo-App --jq .owner.type") cat "\$D/ownertype" 2>/dev/null || echo User ;;
     "api repos/o/Demo-App --jq "*) printf '%s\ttrue\n' "\$(cat "\$D/private" 2>/dev/null || echo false)" ;;
     "api repos/o/Demo-App/rulesets --jq "*) cat "\$D/rulesets" ;;
     "api repos/o/Demo-App/rulesets/7 --jq "*"@tsv") cat "\$D/pr" ;;
+    "api repos/o/Demo-App/rulesets/8 --jq "*"length") cat "\$D/tagbypass" 2>/dev/null || echo 1 ;;
+    "api repos/o/Demo-App/rulesets/8 --jq "*) echo '{"updated":"tags"}' ;;
+    "api -X PUT repos/o/Demo-App/rulesets/8 --input - --jq "*) cat > "\$D/put8"; cat "\$D/putbypass" 2>/dev/null || echo 1 ;;
     "api repos/o/Demo-App/rulesets/7 --jq "*) echo '{"updated":"payload"}' ;;
     "api -X POST repos/o/Demo-App/rulesets --input -") cat > "\$D/post-\$(ls "\$D" | grep -c '^post-')" ;;
     "api -X POST repos/o/Demo-App/rulesets --input - --jq "*) cat > "\$D/post-\$(ls "\$D" | grep -c '^post-')"; cat "\$D/bypass" 2>/dev/null ;;
@@ -364,7 +369,7 @@ check "when GitHub stores no bypass for the tag ruleset, init says nobody can ta
 check "...and how to release anyway" mentions "disable the 'release tags' ruleset"
 gh_world tartale '' '' ''; printf '1' > "${GHD}/bypass"; new_project
 run_init 'n\nn\nn\ny\n'
-check "when GitHub stores a bypass, init says admins can still tag" mentions "repo admins can still create, move or delete v* tags"
+check "when GitHub stores a bypass, init says you can still tag" mentions "tartale can still create, move or delete v* tags"
 check "...without the no-bypass note" lacks "nobody can create a v* tag"
 
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
@@ -428,6 +433,30 @@ check "a bot's token with a powerful scope is still called out" mentions "powerf
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project; printf 'true' > "${GHD}/private"
 run_init 'y\ntartalebot\ny\nn\nn\n\nghp_abc\n'
 check "for a private repo the scope is repo" mentions "settings/tokens/new?scopes=repo&"
+
+# Who may create v* tags: you, as a user on a personal repo (GitHub drops a role bypass there), the admin role for an organization.
+gh_world tartale '' '' ''; new_project
+run_init 'n\nn\nn\ny\n'
+check "on a personal repo the tag ruleset names you as the bypass" has_posted '"bypass_actors":[{"actor_id":101,"actor_type":"User","bypass_mode":"always"}]'
+check "...and says you can still tag" mentions "tartale can still create, move or delete v* tags"
+gh_world tartale '' '' ''; printf 'Organization' > "${GHD}/ownertype"; new_project
+run_init 'n\nn\nn\ny\n'
+check "on an organization's repo the tag ruleset uses the admin role" has_posted '"actor_type":"RepositoryRole"'
+gh_world tartale '' '' ''; printf '0' > "${GHD}/bypass"; new_project
+run_init 'n\nn\nn\ny\n'
+check "if GitHub still keeps no bypass, init warns that nobody can tag" mentions "nobody can create a v* tag until you disable"
+
+gh_world tartale '7\tmain\n8\trelease tags\n' '0\tfalse\tfalse\n' ''; printf '0' > "${GHD}/tagbypass"; new_project
+run_init 'n\nn\nn\ny\n\n'
+check "an existing tag ruleset with no bypass offers to add you" mentions "Let tartale create v* tags"
+check "...by updating that ruleset with you as the bypass" grep -qF '"actor_type":"User"' <<<"$(grep 'rulesets/8' "${GHD}/log")"
+check "...and says so" mentions "tartale can now create v* tags"
+gh_world tartale '7\tmain\n8\trelease tags\n' '0\tfalse\tfalse\n' ''; printf '0' > "${GHD}/tagbypass"; printf '0' > "${GHD}/putbypass"; new_project
+run_init 'n\nn\nn\ny\n\n'
+check "if the update is dropped too, init warns" mentions "GitHub kept no bypass: nobody can create a v* tag"
+gh_world tartale '7\tmain\n8\trelease tags\n' '0\tfalse\tfalse\n' ''; new_project
+run_init 'n\nn\nn\ny\n'
+check "an existing tag ruleset that already has a bypass is left alone" mentions "ruleset 'release tags' already exists; left alone"
 
 # The bot question stands on its own: it is asked, and acted on, without creating a token.
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
