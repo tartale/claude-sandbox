@@ -619,7 +619,7 @@ fi
 # --- fine-grained PAT for git and gh -----------------------------------------
 if [ "$DO_TOKEN" = 1 ]; then
     say "Token for $REPO"
-    TOKEN=""; SHARE_VAR=""
+    TOKEN=""; SHARE_VAR=""; TOKEN_FROM_ENV=false
     # A bot's token reaches every repo the bot can access, so one token can serve all your projects: keep
     # it in a host variable (where your shell starts) and let each project's env file hold only the
     # reference, which the launcher expands.
@@ -630,7 +630,7 @@ if [ "$DO_TOKEN" = 1 ]; then
             SHARE_VAR=${SHARE_VAR:-$SHARE_DEFAULT}
             { [[ "$SHARE_VAR" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] && [ "$SHARE_VAR" != CS_GITHUB_TOKEN ]; } || die "not a usable variable name: $SHARE_VAR"
             if [ -n "${!SHARE_VAR:-}" ]; then
-                TOKEN=${!SHARE_VAR}
+                TOKEN=${!SHARE_VAR}; TOKEN_FROM_ENV=true
                 ok "using \$$SHARE_VAR from the environment"
             fi
         fi
@@ -642,7 +642,8 @@ if [ "$DO_TOKEN" = 1 ]; then
             # reaches is what the bot account can access: invite the bot only to the repos it may touch.
             CLASSIC_SCOPE=public_repo
             case "${REPO_INFO:-}" in true*) CLASSIC_SCOPE=repo ;; esac   # REPO_INFO is "private<TAB>admin"
-            URL="https://$GITHUB_HOST/settings/tokens/new?scopes=$CLASSIC_SCOPE&description=claude-sandbox"
+            NOTE_NAME="cs-${REPO#*/}"; [ -z "$SHARE_VAR" ] || NOTE_NAME="claude-sandbox-$BOT"
+            URL="https://$GITHUB_HOST/settings/tokens/new?scopes=$CLASSIC_SCOPE&description=$NOTE_NAME"
             note "GitHub's fine-grained tokens cannot reach a repo that $BOT only collaborates on, so create a"
             note "classic token as $BOT, with the scope $CLASSIC_SCOPE and nothing else (no workflow, no admin:*)."
             note "It reaches every repo $BOT can access, so invite $BOT only to the repos the agent may touch:"
@@ -694,17 +695,31 @@ if [ "$DO_TOKEN" = 1 ]; then
           tmp=$(mktemp)
           fine_comment="# Fine-grained GitHub token, limited to $REPO (git and gh in the sandbox). Whatever it can do, the agent can do: keep it to Contents, Pull requests and Issues write, with no Administration or Workflows."
           classic_comment="# Classic GitHub token (git and gh in the sandbox). It cannot be limited to one repo: it reaches every repo the account can, and whatever it can do, the agent can do."
+          shared_comment="# The bot's GitHub token, shared by all projects: a host variable, expanded from the host environment when the sandbox starts (export it where your shell starts)."
           env_comment=$fine_comment; [[ "$TOKEN" != ghp_* ]] || env_comment=$classic_comment
           # Drop any earlier entry and its comment; the new one goes in the claude-sandbox block.
-          { grep -vxF -e "$fine_comment" "$ENV_FILE" | grep -vxF -e "$classic_comment" | grep -v '^CS_GITHUB_TOKEN=' > "$tmp"; } || true
+          { grep -vxF -e "$fine_comment" "$ENV_FILE" | grep -vxF -e "$classic_comment" | grep -vxF -e "$shared_comment" | grep -v '^CS_GITHUB_TOKEN=' > "$tmp"; } || true
           cat "$tmp" > "$ENV_FILE"; rm -f "$tmp"
-          cs_block_put "$ENV_FILE" "$(printf '%s\nCS_GITHUB_TOKEN=%s' "$env_comment" "$TOKEN")" )
+          if [ -n "$SHARE_VAR" ]; then
+              cs_block_put "$ENV_FILE" "$(printf '%s\nCS_GITHUB_TOKEN=$%s' "$shared_comment" "$SHARE_VAR")"
+          else
+              cs_block_put "$ENV_FILE" "$(printf '%s\nCS_GITHUB_TOKEN=%s' "$env_comment" "$TOKEN")"
+          fi )
         chmod 600 "$ENV_FILE"
         if git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q "$ENV_FILE"; then
             echo "$ENV_FILE" >> "$(git rev-parse --git-dir)/info/exclude"
             note "added $ENV_FILE to .git/info/exclude"
         fi
-        ok "CS_GITHUB_TOKEN saved to $ENV_FILE (mode 600)"
+        if [ -n "$SHARE_VAR" ]; then
+            ok "CS_GITHUB_TOKEN=\$$SHARE_VAR saved to $ENV_FILE (a reference, not the token)"
+            if [ "$TOKEN_FROM_ENV" != true ]; then
+                note "make the token available to every project: add this where your shell starts (for example"
+                note "your shell profile, or your global direnv), with the token you just created, then restart the shell:"
+                cmd "export $SHARE_VAR=<the token>"
+            fi
+        else
+            ok "CS_GITHUB_TOKEN saved to $ENV_FILE (mode 600)"
+        fi
         unset TOKEN OTHERS scopes risky
     else
         note "no token entered; nothing written"
