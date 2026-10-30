@@ -323,6 +323,7 @@ case "\$*" in
     "api repos/o/Demo-App/rulesets/7 --jq "*"@tsv") cat "\$D/pr" ;;
     "api repos/o/Demo-App/rulesets/7 --jq "*) echo '{"updated":"payload"}' ;;
     "api -X POST repos/o/Demo-App/rulesets --input -") cat > "\$D/post-\$(ls "\$D" | grep -c '^post-')" ;;
+    "api -X POST repos/o/Demo-App/rulesets --input - --jq "*) cat > "\$D/post-\$(ls "\$D" | grep -c '^post-')"; cat "\$D/bypass" 2>/dev/null ;;
     "api -X PUT repos/o/Demo-App/rulesets/7 --input -") cat > "\$D/put" ;;
     "api repos/o/Demo-App/collaborators/"*"/permission --jq .permission") [ -s "\$D/perm" ] && cat "\$D/perm" || exit 1 ;;
 esac
@@ -356,6 +357,15 @@ check "...and says the token can merge its own PRs" mentions "can merge its own 
 check "it also creates the tag ruleset" has_posted '"name":"release tags","target":"tag"'
 check "...for v* tags, with the admin role able to bypass" has_posted '"include":["refs/tags/v*"]'
 check "...blocking creation, update and deletion" has_posted '{"type":"creation"},{"type":"update"},{"type":"deletion"}'
+
+gh_world tartale '' '' ''; printf '0' > "${GHD}/bypass"; new_project
+run_init 'n\nn\nn\ny\n'
+check "when GitHub stores no bypass for the tag ruleset, init says nobody can tag" mentions "nobody can create a v* tag"
+check "...and how to release anyway" mentions "disable the 'release tags' ruleset"
+gh_world tartale '' '' ''; printf '1' > "${GHD}/bypass"; new_project
+run_init 'n\nn\nn\ny\n'
+check "when GitHub stores a bypass, init says admins can still tag" mentions "repo admins can still create, move or delete v* tags"
+check "...without the no-bypass note" lacks "nobody can create a v* tag"
 
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
 run_init 'y\ntartalebot\ny\nn\ny\n\ngithub_pat_x\n'; rc=$?

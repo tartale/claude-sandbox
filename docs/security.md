@@ -220,7 +220,7 @@ To check it from the sandbox, open a PR, then try `gh pr merge <number> --merge`
 
 ### Tags
 
-`release.yml` runs on any `v*` tag but waits for your approval (the `release` environment), so a tag the agent pushes cannot publish. `init.sh` also adds a ruleset that stops the agent creating, moving or deleting those tags (the rulesets step needs your admin `gh` login). The admin role can bypass it, so you can still tag a release. By hand:
+`release.yml` runs on any `v*` tag but waits for your approval (the `release` environment), so a tag the agent pushes cannot publish. `init.sh` also adds a ruleset that stops the agent creating, moving or deleting those tags (the rulesets step needs your admin `gh` login). On a repository an organization owns, the admin role can bypass it, so you can still tag a release. On a repository a user owns, GitHub keeps no bypass actor, so nobody can create a `v*` tag until you disable the `release tags` ruleset (Settings, Rules, Rulesets) and enable it again afterwards; `init.sh` says which case you are in. By hand:
 
 ```bash
 R=$(gh repo view --json nameWithOwner -q .nameWithOwner)
@@ -232,7 +232,7 @@ gh api -X POST "repos/$R/rulesets" --input - <<'JSON'
 JSON
 ```
 
-Check from the sandbox: `git push origin HEAD:refs/tags/v0.0.0-probe` must be refused. If it succeeds, the sandbox token inherits your bypass: delete the probe (`git push origin --delete v0.0.0-probe`) and remove the `bypass_actors` entry, then tag releases by briefly disabling the ruleset.
+Check from the sandbox: `git push origin HEAD:refs/tags/v0.0.0-probe` must be refused. If it succeeds, the sandbox token inherits an admin bypass: delete the probe (`git push origin --delete v0.0.0-probe`) and remove the `bypass_actors` entry, then tag releases by briefly disabling the ruleset.
 
 ### The base image
 
