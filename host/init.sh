@@ -327,10 +327,23 @@ ask_def "  Create and store a GitHub token for $REPO?$TOKEN_NOTE" "$TOKEN_DEFAUL
 
 # With the token on a second account, the agent cannot approve its own pull requests, so the
 # ruleset can require your approval. Without one, the token acts as you and can merge freely.
-BOT=""
-if ask_def "  Use a separate bot account for the sandbox's token (so the agent cannot approve its own PRs)?" N 0; then
-    read -r -p "  The bot's GitHub username: " BOT
-    [[ "$BOT" =~ ^[A-Za-z0-9-]+$ ]] || die "not a GitHub username: $BOT"
+BOT=""; BOT_DEFAULT=N; BOT_NOTE=""; BOT_SUGGEST=""
+# A token already stored on another account than yours means the bot is set up: default to yes, and
+# to that account's name.
+if command -v gh >/dev/null && gh auth status >/dev/null 2>&1 && [ -f "$ENV_FILE" ]; then
+    STORED=$(grep '^CS_GITHUB_TOKEN=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true)
+    if [ -n "$STORED" ]; then
+        STORED_OWNER=$(token_owner "$STORED"); ADMIN_NOW=$(gh api user --jq .login 2>/dev/null || true)
+        if [ -n "$STORED_OWNER" ] && [ -n "$ADMIN_NOW" ] && [ "$(lower "$STORED_OWNER")" != "$(lower "$ADMIN_NOW")" ]; then
+            BOT_DEFAULT=Y; BOT_SUGGEST=$STORED_OWNER; BOT_NOTE=" (the stored token belongs to $STORED_OWNER)"
+        fi
+    fi
+    unset STORED STORED_OWNER ADMIN_NOW
+fi
+if ask_def "  Use a separate bot account for the sandbox's token (so the agent cannot approve its own PRs)?$BOT_NOTE" "$BOT_DEFAULT" 0; then
+    read -r -p "  The bot's GitHub username${BOT_SUGGEST:+ [$BOT_SUGGEST]}: " BOT
+    BOT=${BOT:-$BOT_SUGGEST}
+    [[ "$BOT" =~ ^[A-Za-z0-9-]+$ ]] || die "not a GitHub username: ${BOT:-(none)}"
 fi
 
 REGISTRY_DEFAULT=Y; REGISTRY_NOTE=""
