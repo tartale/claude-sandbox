@@ -53,7 +53,7 @@ run_init() {
     rc=${PIPESTATUS[0]}
     return "${rc}"
 }
-NO3='n\nn\nn\n'   # token, registry login, ruleset
+NO3='n\nn\nn\nn\n'   # token, bot account, registry login, ruleset
 
 has_file() { [ -f "$1" ]; }
 mode_is() { [ "$(stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1")" = "$2" ]; }
@@ -268,7 +268,7 @@ ghe_project() {   # REMOTE
 }
 for remote in git@git.corp.example:o/Demo-App.git https://git.corp.example/o/Demo-App.git ssh://git@git.corp.example:2222/o/Demo-App.git; do
     ghe_project "${remote}"
-    run_init 'n\nn\n'; rc=$?
+    run_init 'n\nn\nn\n'; rc=$?
     check "${remote}: runs to the end" test "${rc}" -eq 0
     check "${remote}: finds the repo on the Enterprise host" mentions "repo o/Demo-App on git.corp.example"
     check "${remote}: writes the host to the env file, uncommented" contains "${WORK}/proj/.env" $'\nCS_GITHUB_HOST=git.corp.example'
@@ -349,7 +349,7 @@ nothing_posted() { ! ls "${GHD}"/post-* >/dev/null 2>&1; }
 has_posted() { posts | grep -qF -- "$1"; }
 
 gh_world tartale '' '' ''; new_project
-run_init 'n\nn\ny\n'; rc=$?
+run_init 'n\nn\nn\ny\n'; rc=$?
 check "the rulesets step creates the main ruleset" has_posted '"name":"main"'
 check "...requiring a pull request but no approval when there is no bot" has_posted '"required_approving_review_count":0'
 check "...and says the token can merge its own PRs" mentions "can merge its own PRs"
@@ -358,7 +358,7 @@ check "...for v* tags, with the admin role able to bypass" has_posted '"include"
 check "...blocking creation, update and deletion" has_posted '{"type":"creation"},{"type":"update"},{"type":"deletion"}'
 
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
-run_init 'y\nn\ny\ny\ntartalebot\n\ngithub_pat_x\n'; rc=$?
+run_init 'y\ny\ntartalebot\nn\ny\n\ngithub_pat_x\n'; rc=$?
 check "a bot token is accepted when it belongs to the bot" test "${rc}" -eq 0
 check "...stored in the env file" contains "${WORK}/proj/.env" 'CS_GITHUB_TOKEN=github_pat_x'
 check "a collaborator with write access is not invited again" lacks "Invite it now"
@@ -368,35 +368,58 @@ check "...and is dismissed when new commits arrive" has_posted '"dismiss_stale_r
 check "the bot flow does not say the token can merge freely" lacks "can merge its own PRs"
 
 gh_world tartale '' '' ''; owner_curl tartalebot; new_project
-run_init 'y\nn\nn\ny\ntartalebot\ny\n\ngithub_pat_x\n'
+run_init 'y\ny\ntartalebot\nn\nn\ny\n\ngithub_pat_x\n'
 check "a bot that is not a collaborator can be invited with Write" ghlogged "api -X PUT repos/o/Demo-App/collaborators/tartalebot -f permission=push"
 
 gh_world tartale '' '' 'admin'; owner_curl tartalebot; new_project
-run_init 'y\nn\nn\ny\ntartalebot\n\ngithub_pat_x\n'
+run_init 'y\ny\ntartalebot\nn\nn\n\ngithub_pat_x\n'
 check "a bot with the admin role is warned about" mentions "give it the Write role instead"
 
 gh_world tartale '' '' 'write'; owner_curl tartale; new_project
-run_init 'y\nn\nn\ny\ntartalebot\n\ngithub_pat_x\n'; rc=$?
+run_init 'y\ny\ntartalebot\nn\nn\n\ngithub_pat_x\n'; rc=$?
 check "a token on the wrong account is refused" test "${rc}" -ne 0
 check "...naming both accounts" mentions "belongs to tartale, not tartalebot"
 check "...and not stored" test ! -f "${WORK}/proj/.env" -o "$(grep -c 'CS_GITHUB_TOKEN=github_pat_x' "${WORK}/proj/.env" 2>/dev/null)" = 0
 
+# The bot question stands on its own: it is asked, and acted on, without creating a token.
+gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
+printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
+run_init 'n\ny\ntartalebot\nn\nn\n'
+check "the bot question is asked even when no token is created" mentions "separate bot account"
+check "...checking the collaborator" mentions "tartalebot can write to o/Demo-App"
+check "...and that the stored token is the bot's" mentions "the stored token belongs to tartalebot"
+
+gh_world tartale '' '' 'write'; owner_curl tartale; new_project
+printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
+run_init 'n\ny\ntartalebot\nn\nn\n'
+check "a stored token on the wrong account is reported" mentions "the stored token belongs to tartale, not tartalebot"
+check "...saying to create a new one as the bot" mentions "create it while signed in as tartalebot"
+
+gh_world tartale '' '' 'write'; new_project
+run_init 'n\ny\ntartalebot\nn\nn\n'
+check "with no token stored it says to create one as the bot" mentions "no token is stored yet"
+
+new_project
+run_init "" "${ROOT}/host/init.sh --yes"
+check "--yes answers the bot question no, without asking for a username" lacks "The bot's GitHub username"
+rm -f "${BIN}/gh"; printf '#!/bin/sh\nexit 0\n' > "${BIN}/curl"
+
 # An existing main ruleset is made stricter only, and only when the stored token is a bot's.
 gh_world tartale '7\tmain\n8\trelease tags\n' '0\tfalse\tfalse\n' ''; owner_curl tartalebot; new_project
 printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
-run_init 'n\nn\ny\ny\n'
+run_init 'n\nn\nn\ny\ny\n'
 check "an existing main ruleset is raised to one approval when the token is a bot's" ghlogged '"required_approving_review_count":1'
 check "...by an update of that ruleset" test -s "${GHD}/put"
 check "...with nothing else created" nothing_posted
 
 gh_world tartale '7\tmain\n8\trelease tags\n' '1\ttrue\ttrue\n' ''; owner_curl tartalebot; new_project
 printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
-run_init 'n\nn\ny\n'
+run_init 'n\nn\nn\ny\n'
 check "a ruleset that is already strict enough is left alone" mentions "already as strict as wanted"
 check "...and so are existing rulesets, so nothing is written" test ! -e "${GHD}/put" -a ! -e "${GHD}/post-0"
 
 gh_world tartale '7\tmain\n' '2\ttrue\ttrue\n' ''; new_project
-run_init 'n\nn\ny\n'
+run_init 'n\nn\nn\ny\n'
 check "a stricter ruleset is never weakened" test ! -e "${GHD}/put"
 
 gh_world tartale '' '' ''; new_project
@@ -462,7 +485,7 @@ check "...without asking to continue" lacks "Use a classic token anyway"
 classic_curl 200 "repo"
 new_project
 printf 'CS_GITHUB_TOKEN=ghp_abc\n' > "${ENVF}"
-run_init 'n\nn\nn\n'
+run_init 'n\nn\nn\nn\n'
 check "an existing working classic token is recognised" mentions "a classic token is already in"
 
 new_project

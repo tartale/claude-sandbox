@@ -325,6 +325,14 @@ fi
 unset EXISTING_TOKEN
 ask_def "  Create and store a GitHub token for $REPO?$TOKEN_NOTE" "$TOKEN_DEFAULT" 0 && DO_TOKEN=1
 
+# With the token on a second account, the agent cannot approve its own pull requests, so the
+# ruleset can require your approval. Without one, the token acts as you and can merge freely.
+BOT=""
+if ask_def "  Use a separate bot account for the sandbox's token (so the agent cannot approve its own PRs)?" N 0; then
+    read -r -p "  The bot's GitHub username: " BOT
+    [[ "$BOT" =~ ^[A-Za-z0-9-]+$ ]] || die "not a GitHub username: $BOT"
+fi
+
 REGISTRY_DEFAULT=Y; REGISTRY_NOTE=""
 if grep -qs '"ghcr.io"' "$DOCKER_DIR/config.json"; then
     REGISTRY_DEFAULT=N; REGISTRY_NOTE=" (already stored in $DOCKER_DIR)"
@@ -540,6 +548,43 @@ if git rev-parse --git-dir >/dev/null 2>&1 && ! { git check-ignore -q .envrc && 
 fi
 if command -v direnv >/dev/null; then note "to load them:"; cmd "direnv allow"; else note "direnv not installed; load them in your shell with:"; cmd "source $CS_RC"; fi
 
+# --- the bot account ----------------------------------------------------------
+if [ -n "$BOT" ]; then
+    say "Bot account $BOT"
+    if [ "$HAVE_GH" = 1 ] && gh auth status >/dev/null 2>&1; then
+        perm=$(gh api "repos/$REPO/collaborators/$BOT/permission" --jq .permission 2>/dev/null || true)
+        case "$perm" in
+            write|maintain) ok "$BOT can write to $REPO" ;;
+            admin) warn "$BOT is an admin of $REPO: give it the Write role instead, or it can bypass the rules" ;;
+            *) if ask_def "  $BOT is not a collaborator with write access. Invite it now?" Y 0; then
+                   gh api -X PUT "repos/$REPO/collaborators/$BOT" -f permission=push >/dev/null \
+                       && ok "invited $BOT with Write; accept the invitation as $BOT" \
+                       || warn "could not invite $BOT; add it under Settings, Collaborators"
+               else
+                   note "add $BOT with the Write role under Settings, Collaborators"
+               fi ;;
+        esac
+    else
+        note "gh is not signed in: add $BOT with the Write role under Settings, Collaborators"
+    fi
+    if [ "$DO_TOKEN" != 1 ]; then
+        # Keeping the token already in the env file: it has to be the bot's.
+        STORED=""; [ -f "$ENV_FILE" ] && STORED=$(grep '^CS_GITHUB_TOKEN=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true)
+        if [ -z "$STORED" ]; then
+            note "no token is stored yet: run init.sh again and create one as $BOT"
+        else
+            TOKEN_OWNER=$(token_owner "$STORED")
+            if [ "$(lower "$TOKEN_OWNER")" = "$(lower "$BOT")" ]; then
+                ok "the stored token belongs to $BOT"
+            else
+                warn "the stored token belongs to ${TOKEN_OWNER:-an unknown account}, not $BOT"
+                note "run init.sh again, say yes to creating a token, and create it while signed in as $BOT"
+            fi
+        fi
+        unset STORED
+    fi
+fi
+
 # --- fine-grained PAT for git and gh -----------------------------------------
 if [ "$DO_TOKEN" = 1 ]; then
     say "Token for $REPO"
@@ -548,30 +593,7 @@ if [ "$DO_TOKEN" = 1 ]; then
     note "permissions (Contents, Pull requests, Issues: RW). No Administration or Workflows."
     note "$URL"
     note "If a fine-grained token cannot be used, a classic token (ghp_) is accepted after a warning."
-    # With the token on a second account, the agent cannot approve its own pull requests, so the
-    # ruleset can require your approval. Without one, the token acts as you and can merge freely.
-    BOT=""
-    if ask_def "  Is this token for a separate bot account (so the agent cannot approve its own PRs)?" N 0; then
-        read -r -p "  The bot's GitHub username: " BOT
-        [[ "$BOT" =~ ^[A-Za-z0-9-]+$ ]] || die "not a GitHub username: $BOT"
-        note "Sign in as $BOT (a private window) before opening the token page."
-        if [ "$HAVE_GH" = 1 ] && gh auth status >/dev/null 2>&1; then
-            perm=$(gh api "repos/$REPO/collaborators/$BOT/permission" --jq .permission 2>/dev/null || true)
-            case "$perm" in
-                write|maintain) ok "$BOT can write to $REPO" ;;
-                admin) warn "$BOT is an admin of $REPO: give it the Write role instead, or it can bypass the rules" ;;
-                *) if ask_def "  $BOT is not a collaborator with write access. Invite it now?" Y 0; then
-                       gh api -X PUT "repos/$REPO/collaborators/$BOT" -f permission=push >/dev/null \
-                           && ok "invited $BOT with Write; accept the invitation as $BOT" \
-                           || warn "could not invite $BOT; add it under Settings, Collaborators"
-                   else
-                       note "add $BOT with the Write role under Settings, Collaborators"
-                   fi ;;
-            esac
-        else
-            note "gh is not signed in: add $BOT with the Write role under Settings, Collaborators"
-        fi
-    fi
+    [ -z "$BOT" ] || note "Sign in as $BOT (a private window) before opening the token page: the token must be the bot's."
     read -r -p "  Press Enter to open it (Ctrl-C to stop)... " _
     (command -v open >/dev/null && open "$URL") || (command -v xdg-open >/dev/null && xdg-open "$URL") || warn "could not open a browser; use the link above"
 
@@ -736,7 +758,7 @@ if [ "$DO_RULESET" = 1 ]; then
     fi
     if [ "$APPROVALS" = 0 ]; then
         note "no approval is required: the sandbox token acts as you and can merge its own PRs."
-        note "To require yours, run init.sh again and say the token is for a separate bot account."
+        note "To require yours, run init.sh again, say the sandbox uses a separate bot account, and create its token as that account."
     fi
 
     if [ -z "$TAGS_ID" ]; then
