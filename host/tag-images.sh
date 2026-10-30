@@ -6,7 +6,7 @@ CLAUDE_VERSION="${CLAUDE_VERSION:-$(npm view @anthropic-ai/claude-code version 2
 CLAUDE_MAJOR_MINOR=$(echo "$CLAUDE_VERSION" | cut -d. -f1-2)
 CLAUDE_MAJOR=$(echo "$CLAUDE_VERSION" | cut -d. -f1)
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LANGUAGES=$(find "$SCRIPT_DIR/plugins/languages" -name "*.sh" -exec basename {} .sh \; | sort)
 
 tag_base() {

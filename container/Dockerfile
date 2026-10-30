@@ -42,12 +42,12 @@ WORKDIR /workspace
 RUN chown claude:claude /workspace
 
 COPY plugins/install.sh /usr/local/bin/install-plugins.sh
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-COPY github-config.sh /usr/local/bin/github-config.sh
-COPY setup-scopes.sh /usr/local/bin/setup-scopes.sh
-COPY user-sync.sh /usr/local/bin/claude-user-sync
-COPY user-pull.sh /usr/local/bin/claude-user-pull
-COPY claude-settings.json /usr/local/share/claude-sandbox/settings.json
+COPY container/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY container/github-config.sh /usr/local/bin/github-config.sh
+COPY container/setup-scopes.sh /usr/local/bin/setup-scopes.sh
+COPY container/user-sync.sh /usr/local/bin/claude-user-sync
+COPY container/user-pull.sh /usr/local/bin/claude-user-pull
+COPY container/claude-settings.json /usr/local/share/claude-sandbox/settings.json
 RUN chmod +x /usr/local/bin/install-plugins.sh /usr/local/bin/entrypoint.sh \
              /usr/local/bin/setup-scopes.sh /usr/local/bin/claude-user-sync /usr/local/bin/claude-user-pull
 

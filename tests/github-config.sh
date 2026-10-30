@@ -15,7 +15,7 @@ contains() { grep -qF -- "$2" "$1"; }
 absent() { ! contains "$@"; }
 
 # shellcheck source=../github-config.sh
-. "${ROOT}/github-config.sh"
+. "${ROOT}/container/github-config.sh"
 CFG="${WORK}/gitconfig"; HELPER="${WORK}/helper"
 
 write_github_gitconfig github.com tok "${CFG}" "${HELPER}"

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Network setup for the sandbox containers, run once per host (not per project).
 #
-#   network.sh setup bridge  [--subnet CIDR] [--resolver IP]
-#   network.sh setup macvlan --ip-range CIDR [--parent IFACE] [--subnet CIDR] [--gateway IP]
-#   network.sh setup ipvlan  --ip-range CIDR [--parent IFACE] [--subnet CIDR] [--gateway IP] [--mode l2|l3]
-#   network.sh check  [LAN_HOST]
-#   network.sh status
-#   network.sh remove
+#   cs network setup bridge  [--subnet CIDR] [--resolver IP]
+#   cs network setup macvlan --ip-range CIDR [--parent IFACE] [--subnet CIDR] [--gateway IP]
+#   cs network setup ipvlan  --ip-range CIDR [--parent IFACE] [--subnet CIDR] [--gateway IP] [--mode l2|l3]
+#   cs network check  [LAN_HOST]
+#   cs network status
+#   cs network remove
 #
 # bridge  a docker network of its own, plus iptables rules that drop traffic from it to the private
 #         ranges (your LAN) and to the host itself (ssh, the admin UI), while letting DNS reach your
@@ -67,7 +67,7 @@ existing_matches() {
     have=$(docker network inspect -f '{{.Driver}}|{{range .IPAM.Config}}{{.Subnet}}|{{.IPRange}}{{end}}' "$NAME")
     [ "$have" = "$want" ] && return 0
     warn "network $NAME already exists, as ${have//|/ } (wanted ${want//|/ })"
-    die "run 'network.sh remove' first (it also removes the firewall rules), or pick another --name"
+    die "run 'cs network remove' first (it also removes the firewall rules), or pick another --name"
 }
 confirm() {
     [ "$YES" = true ] && return 0
@@ -126,7 +126,7 @@ setup_bridge() {
     fi
     while IFS= read -r line; do rule_add "$line"; done < <(bridge_rules "$subnet" "$resolver")
     note "INPUT rules also stop the sandbox opening connections to the host itself (ssh, admin UI). On a NAS whose"
-    note "firewall rewrites INPUT, check they are still first after changing its settings: network.sh check."
+    note "firewall rewrites INPUT, check they are still first after changing its settings: cs network check."
     next_steps
 }
 
@@ -148,7 +148,7 @@ setup_lan() {   # driver
         die "--ip-range $IP_RANGE is not a slice of $subnet: it covers the whole LAN or has host bits set. Give a small block your DHCP server does not hand out, for example $slice"
     fi
     if [ "$driver" = macvlan ] && [ -d "/sys/class/net/$parent/wireless" ]; then
-        die "$parent is a Wi-Fi interface and macvlan does not work over it; use: network.sh setup ipvlan ..."
+        die "$parent is a Wi-Fi interface and macvlan does not work over it; use: cs network setup ipvlan ..."
     fi
     say "$driver network $NAME"
     note "parent     $parent"; note "subnet     $subnet"; note "gateway    $gateway"; note "ip range   $IP_RANGE"
@@ -173,7 +173,7 @@ next_steps() {
     echo
     echo "export CS_DOCKER_FLAGS=\"--network $NAME\""
     echo
-    note "Verify with: network.sh check"
+    note "Verify with: cs network check"
 }
 
 # --- check -----------------------------------------------------------------------
@@ -181,7 +181,7 @@ check() {   # [LAN_HOST]
     need_docker
     exists || die "no network named $NAME; run setup first"
     local driver lan=${1:-$(detect_gateway)} out
-    [ -n "$lan" ] || die "pass a LAN host to test, for example your router: network.sh check 192.168.1.1"
+    [ -n "$lan" ] || die "pass a LAN host to test, for example your router: cs network check 192.168.1.1"
     driver=$(docker network inspect -f '{{.Driver}}' "$NAME")
     say "Checking $NAME ($driver) from a throwaway container"
     out=$(docker run --rm --network "$NAME" alpine sh -c '
@@ -242,7 +242,7 @@ remove() {
 CMD=$1; shift
 KIND=""
 if [ "$CMD" = setup ]; then
-    [ "$#" -gt 0 ] || die "usage: network.sh setup bridge|macvlan|ipvlan"
+    [ "$#" -gt 0 ] || die "usage: cs network setup bridge|macvlan|ipvlan"
     KIND=$1; shift
 fi
 POSITIONAL=()

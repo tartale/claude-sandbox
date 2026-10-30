@@ -30,7 +30,7 @@ Nothing technical stops a session from merging its own pull request. The sandbox
 
 The container can reach any host, including the other machines on your LAN. Anything the session can read (the project token, the user-config token, the Claude login) can therefore be sent out. Limiting what the container can reach has to happen outside it: the sandbox has no `NET_ADMIN` and cannot change its own rules.
 
-The launcher sets none of this up. [`network.sh`](#automating-steps-1-to-3) automates steps 1 to 3 (it has been tested against stubs, not against a real firewall or router), and the manual commands below are what it does. Pick the steps that match what you want to protect:
+The launcher sets none of this up. [`cs network`](#automating-steps-1-to-3) automates steps 1 to 3 (it has been tested against stubs, not against a real firewall or router), and the manual commands below are what it does. Pick the steps that match what you want to protect:
 
 | Goal | Steps | Strength |
 |---|---|---|
@@ -87,7 +87,7 @@ This setup was verified from inside a sandbox. The sandbox could not reach the r
 3. **Create the docker network on the tagged sub-interface.** Docker creates `eth0.6` itself. `--ip-range` is a small block inside the VLAN (here `10.0.6.16/28`), which is what the rules below name. The kernel needs macvlan and 802.1q support; ipvlan is not available on every NAS kernel (Synology's 4.4 has none).
 
    ```bash
-   bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh setup macvlan --parent eth0.6 --subnet 10.0.6.0/24 --gateway 10.0.6.1 --ip-range 10.0.6.16/28
+   bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs network setup macvlan --parent eth0.6 --subnet 10.0.6.0/24 --gateway 10.0.6.1 --ip-range 10.0.6.16/28
    ```
 
 4. **Launch on it, resolving through the gateway.** The gateway builds its domain-to-address table from the DNS answers it sees, so the sandbox's queries must go through it. In `.envrc-cs`:
@@ -149,40 +149,40 @@ For `git` and `gh`: `github.com`, `api.github.com`, `codeload.github.com` and `o
 
 ### Automating steps 1 to 3
 
-`network.sh` runs once per host, not per project. It detects the interface, subnet, gateway and resolver from the host's default route, shows what it found and asks before it creates anything. Re-running it only adds what is missing.
+`cs network` runs once per host, not per project. It detects the interface, subnet, gateway and resolver from the host's default route, shows what it found and asks before it creates anything. Re-running it only adds what is missing.
 
 Steps 1 and 2 in one go, on a Linux host or NAS (needs root). Besides blocking your LAN, this drops new connections from the sandbox to the host itself (ssh, the web and admin ports), which a `DOCKER-USER` rule alone does not cover:
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh setup bridge
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs network setup bridge
 ```
 
 Step 3: a network with its own LAN addresses, for a router or firewall to filter. `--ip-range` is a slice of your LAN that your DHCP server does not hand out (`192.168.1.192/28` is an example). Over a wired interface use macvlan:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh setup macvlan --ip-range 192.168.1.192/28
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs network setup macvlan --ip-range 192.168.1.192/28
 ```
 
 macvlan does not work over Wi-Fi; ipvlan does:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh setup ipvlan --ip-range 192.168.1.192/28
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs network setup ipvlan --ip-range 192.168.1.192/28
 ```
 
 Each prints the `CS_DOCKER_FLAGS` line to put in `.envrc-cs`. Then check from a throwaway container that a LAN host and the host's own ssh and web ports are blocked (bridge only; with macvlan or ipvlan the router decides), DNS works and the internet is reachable. Pass your router's address, or leave it out to test the default gateway:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh check 192.168.1.1
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs network check 192.168.1.1
 ```
 
 To see what is set up, or to undo it:
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh status
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs network status
 ```
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/network.sh)" network.sh remove
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs network remove
 ```
 
 A network that already exists under the name must match what you ask for (type, subnet and range); otherwise `setup` stops and tells you to `remove` it first, which is also how you switch between bridge, macvlan and ipvlan. `--name`, `--subnet`, `--gateway`, `--parent`, `--resolver` and `--mode l2|l3` override what it detects; `--yes` skips the confirmation. The bridge rules do not survive a reboot (the docker network does), so run `setup bridge` again after one. The host-side rules go in `INPUT`; a NAS whose firewall rewrites `INPUT` can push them down the chain, so run `check` after changing its firewall settings. Docker Desktop (macOS, Windows) cannot do any of this.

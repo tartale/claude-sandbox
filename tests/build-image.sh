@@ -9,14 +9,13 @@ trap 'find "${WORK}" -delete' EXIT
 
 BIN="${WORK}/bin"
 LOG="${WORK}/docker.log"
-mkdir -p "${BIN}" "${WORK}/ctx"
+mkdir -p "${BIN}" "${WORK}/tree/container"
 for f in /usr/bin/* /bin/*; do
     case "${f##*/}" in curl|docker|npm) continue ;; esac
     ln -sf "$f" "${BIN}/${f##*/}" 2>/dev/null || true
 done
-echo FROM scratch > "${WORK}/ctx/Dockerfile"
-tar -czf "${WORK}/ctx.tgz" -C "${WORK}" ctx
-printf '#!/bin/sh\ncat "%s"\n' "${WORK}/ctx.tgz" > "${BIN}/curl"
+echo FROM scratch > "${WORK}/tree/container/Dockerfile"   # the tree cs would run from
+printf '#!/bin/sh\nexit 0\n' > "${BIN}/curl"
 printf '#!/bin/sh\necho "npm $*" >> "%s"; echo 9.9.9\n' "${LOG}" > "${BIN}/npm"
 # docker build: record the arguments and, for a --secret, the contents of its file.
 cat > "${BIN}/docker" <<EOS
@@ -38,9 +37,9 @@ check() { local name=$1; shift; if "$@"; then pass "${name}"; else fail "${name}
 logged() { grep -qF -- "$1" "${LOG}"; }
 not_logged() { ! logged "$1"; }
 
-build() { : > "${LOG}"; OUT=$(env -i PATH="${BIN}" HOME="${WORK}" "$@" bash "${ROOT}/build-image.sh" 2>&1); OUT+=$'\n'$(cat "${LOG}"); }
+build() { : > "${LOG}"; OUT=$(env -i PATH="${BIN}" HOME="${WORK}" CS_ROOT="${WORK}/tree" "$@" bash "${ROOT}/host/build-image.sh" 2>&1); OUT+=$'\n'$(cat "${LOG}"); }
 # build_args ARGS... -- run build-image.sh with command-line arguments.
-build_args() { : > "${LOG}"; OUT=$(env -i PATH="${BIN}" HOME="${WORK}" bash "${ROOT}/build-image.sh" "$@" 2>&1); OUT+=$'\n'$(cat "${LOG}"); }
+build_args() { : > "${LOG}"; OUT=$(env -i PATH="${BIN}" HOME="${WORK}" CS_ROOT="${WORK}/tree" bash "${ROOT}/host/build-image.sh" "$@" 2>&1); OUT+=$'\n'$(cat "${LOG}"); }
 
 build
 check "defaults to the public npm registry" logged "--build-arg NPM_REGISTRY=https://registry.npmjs.org/"
@@ -57,6 +56,7 @@ check "the credentials are not on the docker command line" test "$(grep '^docker
 build
 check "pushes by default" logged "docker push"
 build_args --no-push
+check "the image is built from the Dockerfile in container/" logged "container/Dockerfile"
 check "--no-push builds" logged "docker build"
 check "...and does not push" not_logged "docker push"
 check "...and says it did not" grep -qF "not pushed" <<<"${OUT}"

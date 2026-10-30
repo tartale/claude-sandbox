@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Sets up a project for claude-sandbox. Run on the HOST from the project root:
 #
-#   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/init.sh)"
+#   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs init
 #
-# Run with --help for what it does.
+# (cs init runs this script.) Run with --help for what it does.
 set -euo pipefail
 
 usage() {
     cat <<'EOF2'
-init.sh [--yes | --no]   (asks as it goes; --yes or --no answers the yes/no questions itself)
+cs init [--yes | --no]   (asks as it goes; --yes or --no answers the yes/no questions itself)
 
   - creates .claude/sandbox/{build,run,start}.sh and plugin.sh stubs (existing files are kept)
   - walks you through a single-repo fine-grained token, validates it, and writes
@@ -210,188 +210,34 @@ file_hash() { if command -v sha256sum >/dev/null; then sha256sum < "$1"; else sh
 # The template as of the last run, kept so a changed template can be merged into an edited stub.
 can_merge() { [ -f "$STUB_OUT/.init-base/$1" ] && [ "$(recorded_field "$1" 3)" = "$(file_hash "$STUB_OUT/.init-base/$1")" ]; }
 recorded_field() { awk -v n="$1" -v f="$2" '$1 == n { print $f }' "$STUB_OUT/.init-hashes" 2>/dev/null | head -n 1; }
-render_stub build.sh <<'EOF2'
+# build.sh, run.sh, start.sh, restart.sh and sync.sh only hand the project to the cs command,
+# fetched at the pinned version; what they do lives in the claude-sandbox repo (host/).
+WRAPPER=$(cat <<'EOF2'
 #!/usr/bin/env bash
-# Builds this project's sandbox image from plugin.sh and pushes it.
-# Usage: .claude/sandbox/build.sh [--no-push]
-# Then start it with run.sh or start.sh in this directory.
+# @DESC@
+# Usage: .claude/sandbox/@NAME@ @ARGS@
 set -euo pipefail
 
 THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# The launcher version: CS_REF (a commit, tag or branch of tartale/claude-sandbox), else
+# The claude-sandbox version: CS_REF (a commit, tag or branch of tartale/claude-sandbox), else
 # the commit init.sh pinned in the file "ref" next to this script, else main.
 # CS_REF=latest follows main.
 export CS_REF="${CS_REF:-$(cat "${THIS_SCRIPT_DIR}/ref" 2>/dev/null || echo main)}"
 [ "${CS_REF}" != latest ] || CS_REF=main
 
-export PLUGINS="${THIS_SCRIPT_DIR}/plugin.sh"
-export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
-
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/${CS_REF}/build-image.sh)" build-image "$@"
+CS_PROJECT_DIR="$(cd "${THIS_SCRIPT_DIR}/../.." && pwd)"
+export CS_PROJECT_DIR CS_PROJECT_NAME="@REPO@"
+exec /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/${CS_REF}/cs)" cs @CMD@ "$@"
 EOF2
-render_stub run.sh <<'EOF2'
-#!/usr/bin/env bash
-# Starts this project's sandbox interactively. Usage: .claude/sandbox/run.sh [claude args]
-set -euo pipefail
-
-THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# The launcher version: CS_REF (a commit, tag or branch of tartale/claude-sandbox), else
-# the commit init.sh pinned in the file "ref" next to this script, else main.
-# CS_REF=latest follows main.
-export CS_REF="${CS_REF:-$(cat "${THIS_SCRIPT_DIR}/ref" 2>/dev/null || echo main)}"
-[ "${CS_REF}" != latest ] || CS_REF=main
-
-cd "$(dirname "${BASH_SOURCE[0]}")/../.."
-export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
-
-# Name the container cs-<repo>, or cs-<repo>-2, -3... while another is running.
-# A stopped container with the chosen name is removed, so every run is fresh
-# (and CS_DOCKER_FLAGS may include --restart, which cannot be combined with --rm).
-if [ -z "${CS_CONTAINER_NAME:-}" ]; then
-    CS_CONTAINER_NAME="cs-@TAG@"
-    n=1
-    while [ "$(docker inspect -f '{{.State.Running}}' "$CS_CONTAINER_NAME" 2>/dev/null || true)" = true ]; do
-        n=$((n + 1)); CS_CONTAINER_NAME="cs-@TAG@-$n"
-    done
-    docker rm "$CS_CONTAINER_NAME" >/dev/null 2>&1 || true
-    export CS_CONTAINER_NAME
-fi
-
-exec /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/${CS_REF}/claude-sandbox.sh)" claude-sandbox --name "@REPO@" "$@"
-EOF2
-render_stub start.sh <<'EOF2'
-#!/usr/bin/env bash
-# Starts this project's sandbox in the background; claude waits on a detached tty.
-# Usage: .claude/sandbox/start.sh [claude args]
-set -euo pipefail
-
-THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# The launcher version: CS_REF (a commit, tag or branch of tartale/claude-sandbox), else
-# the commit init.sh pinned in the file "ref" next to this script, else main.
-# CS_REF=latest follows main.
-export CS_REF="${CS_REF:-$(cat "${THIS_SCRIPT_DIR}/ref" 2>/dev/null || echo main)}"
-[ "${CS_REF}" != latest ] || CS_REF=main
-
-cd "$(dirname "${BASH_SOURCE[0]}")/../.."
-export CS_IMAGE_TAG="${CS_IMAGE_TAG:-@TAG@}"
-NAME="${CS_CONTAINER_NAME:-cs-@TAG@}"
-export CS_CONTAINER_NAME="$NAME"
-
-# Each start creates a fresh container, so changed variables and flags always
-# apply. The container restarts with docker unless it was stopped; put --restart in
-# CS_DOCKER_FLAGS to change that. No --rm: it cannot be combined with --restart.
-if [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || true)" = true ]; then
-    echo "$NAME is already running"
-else
-    docker rm "$NAME" >/dev/null 2>&1 || true   # a stopped one from an earlier start
-    CS_DOCKER_FLAGS="-d -t --restart=unless-stopped ${CS_DOCKER_FLAGS:-}" \
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/${CS_REF}/claude-sandbox.sh)" claude-sandbox --name "@REPO@" "$@" >/dev/null
-    echo "started $NAME"
-fi
-printf '\nAttach (detach with ctrl-p ctrl-q):\n\ndocker attach %s\n\nStop:\n\ndocker stop %s\n' "$NAME" "$NAME"
-EOF2
-render_stub restart.sh <<'EOF2'
-#!/usr/bin/env bash
-# Rebuilds the image, stops this project's container and starts it again in the
-# background. Usage: .claude/sandbox/restart.sh [--no-push] [claude args]
-# Without claude arguments it reuses those of the container it replaces. --no-push
-# builds the image without pushing it.
-set -euo pipefail
-
-THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-NAME="${CS_CONTAINER_NAME:-cs-@TAG@}"
-
-BUILD_ARGS=()
-if [ "${1:-}" = --no-push ]; then BUILD_ARGS=(--no-push); shift; fi
-
-if [ "$#" -eq 0 ]; then
-    # start.sh adds --name itself, so the recovered one is dropped. docker inspect ends
-    # its output with a newline of its own; the empty arguments that makes are skipped.
-    while IFS= read -r arg; do
-        [ -n "$arg" ] || continue
-        if [ "${skip:-false}" = true ]; then skip=false; continue; fi
-        if [ "$arg" = --name ]; then skip=true; continue; fi
-        set -- "$@" "$arg"
-    done < <(docker inspect -f '{{range .Config.Cmd}}{{println .}}{{end}}' "$NAME" 2>/dev/null || true)
-fi
-
-"${THIS_SCRIPT_DIR}/build.sh" ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"}
-docker stop "$NAME" >/dev/null 2>&1 || true
-exec "${THIS_SCRIPT_DIR}/start.sh" "$@"
-EOF2
-render_stub sync.sh <<'EOF2'
-#!/usr/bin/env bash
-# Handles the patch a sandbox session wrote with claude-user-sync (user-scope rules
-# and memories). Usage: .claude/sandbox/sync.sh [apply|show|status]
-#   apply   (default) apply the patch to your claude-user checkout and push it
-#   show    page through the patch without applying it
-#   status  say whether a patch is waiting and which files it changes
-# CS_USER_CONFIG_CHECKOUT is that checkout (default: ~/.claude-user).
-set -euo pipefail
-
-THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PATCH="${THIS_SCRIPT_DIR}/../../.tmp/claude-user.patch"
-CHECKOUT="${CS_USER_CONFIG_CHECKOUT:-$HOME/.claude-user}"
-
-# Colors only on a terminal, and never when NO_COLOR is set.
-if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-    BOLD=$'\e[1m'; DIM=$'\e[2m'; RED=$'\e[31m'; GREEN=$'\e[32m'; CYAN=$'\e[36m'; RESET=$'\e[0m'
-else
-    BOLD=""; DIM=""; RED=""; GREEN=""; CYAN=""; RESET=""
-fi
-
-# The patch with additions in green, deletions in red and hunk headers in cyan.
-show_patch() {
-    awk -v b="$BOLD" -v r="$RED" -v g="$GREEN" -v c="$CYAN" -v d="$DIM" -v z="$RESET" '
-        /^(diff |index |--- |\+\+\+ |Subject: )/ { print b $0 z; next }
-        /^@@/                                   { print c $0 z; next }
-        /^-/                                    { print r $0 z; next }
-        /^\+/                                   { print g $0 z; next }
-                                                { print d $0 z }' "$PATCH"
+)
+render_wrapper() {   # stub name, cs command, what it does, its arguments
+    printf '%s\n' "$WRAPPER" | sed "s#@NAME@#$1#g; s#@CMD@#$2#g; s#@DESC@#$3#g; s#@ARGS@#$4#g" | render_stub "$1"
 }
-page_patch() {
-    if [ -t 1 ]; then show_patch | LESS="${LESS:-R}" "${PAGER:-less}"; else show_patch; fi
-}
-
-[ -s "$PATCH" ] || { echo "no patch at $PATCH; nothing to do"; exit 0; }
-
-case "${1:-apply}" in
-    status)
-        echo "a patch is waiting:"
-        git apply --stat "$PATCH"
-        ;;
-    show)
-        page_patch
-        ;;
-    apply)
-        [ -d "$CHECKOUT/.git" ] || { echo "$CHECKOUT is not a git checkout; set CS_USER_CONFIG_CHECKOUT" >&2; exit 1; }
-        echo "Patch from the sandbox:"
-        git apply --stat "$PATCH"
-        echo
-        echo "It changes the rules and memories every future session starts from. Read it before applying."
-        # Enter shows the diff first; after that, Enter declines.
-        shown=0
-        while :; do
-            if [ "$shown" = 0 ]; then hint="[y/n/D]"; else hint="[y/N/d]"; fi
-            read -r -p "Apply and push to $CHECKOUT? $hint " a
-            case "$a" in
-                [Dd]*) page_patch; shown=1 ;;
-                [Yy]*) break ;;
-                [Nn]*) echo "not applied"; exit 1 ;;
-                "")    if [ "$shown" = 0 ]; then page_patch; shown=1; else echo "not applied"; exit 1; fi ;;
-            esac
-        done
-        git -C "$CHECKOUT" pull --ff-only --quiet
-        git -C "$CHECKOUT" am < "$PATCH" || { git -C "$CHECKOUT" am --abort; echo "the patch does not apply; nothing changed" >&2; exit 1; }
-        git -C "$CHECKOUT" push
-        rm -f "$PATCH"
-        ;;
-    *)
-        echo "usage: sync.sh [apply|show|status]" >&2
-        exit 1
-        ;;
-esac
-EOF2
+render_wrapper build.sh build "Builds this project's sandbox image from plugin.sh and pushes it." "[--no-push]"
+render_wrapper run.sh run "Starts this project's sandbox interactively." "[claude args]"
+render_wrapper start.sh start "Starts this project's sandbox in the background." "[claude args]"
+render_wrapper restart.sh restart "Rebuilds the image and restarts this project's background sandbox." "[--no-push] [claude args]"
+render_wrapper sync.sh sync "Applies the patch a sandbox session wrote with claude-user-sync." "[apply|show|status]"
 render_stub plugin.sh <<'EOF2'
 #!/usr/bin/env bash
 # Runs as root while this project's sandbox image is built (see build.sh).

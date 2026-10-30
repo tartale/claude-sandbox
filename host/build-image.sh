@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="tartale/claude-sandbox"
-REF="${CS_REF:-main}"   # a commit, tag or branch of ${REPO}
+# The files the image is built from: the tree cs runs from (CS_ROOT).
+CS_ROOT="${CS_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 PUSH=true
 while [ "$#" -gt 0 ]; do
@@ -25,11 +25,10 @@ CLAUDE_VERSION="${CLAUDE_VERSION:-$(npm view --registry "$CS_NPM_REGISTRY" @anth
 BUILD_DIR=$(mktemp -d)
 trap 'rm -rf "$BUILD_DIR"' EXIT
 
-echo "Fetching build files from ${REPO}@${REF}..."
+echo "Using build files from ${CS_ROOT}..."
 
-# Download as a tarball to preserve git file permissions (100755 on scripts)
-curl -fsSL "https://api.github.com/repos/${REPO}/tarball/${REF}" \
-    | tar -xz --strip-components=1 -C "$BUILD_DIR"
+# A copy, because plugins are staged into it; tar keeps file permissions.
+tar -C "$CS_ROOT" --exclude=./.git --exclude=./.tmp -cf - . | tar -C "$BUILD_DIR" -xf -
 
 # Resolve PLUGINS to a path relative to BUILD_DIR
 PLUGINS_ARG=""
@@ -83,7 +82,7 @@ BUILD_ARGS=(
 [ -n "$CS_LANGUAGE_VERSIONS" ]  && BUILD_ARGS+=(--build-arg "CS_LANGUAGE_VERSIONS=$CS_LANGUAGE_VERSIONS")
 
 echo "Building ${CS_IMAGE}..."
-docker build "${BUILD_ARGS[@]}" "$BUILD_DIR"
+docker build -f "$BUILD_DIR/container/Dockerfile" "${BUILD_ARGS[@]}" "$BUILD_DIR"
 if [ "$PUSH" = true ]; then
     echo "Pushing ${CS_IMAGE}..."
     docker push "$CS_IMAGE"

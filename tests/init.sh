@@ -22,8 +22,8 @@ chmod +x "${BIN}/curl" "${BIN}/envsubst"
 
 # A copy of init.sh whose templates differ from the real ones, to stand in for
 # "the template changed since the last run".
-sed 's|^set -euo pipefail$|set -euo pipefail\n# new header line|' "${ROOT}/init.sh" > "${WORK}/init-changed.sh"
-sed 's|^set -euo pipefail$|set -euo pipefail\n# conflicting header|' "${ROOT}/init.sh" > "${WORK}/init-conflict.sh"
+sed 's|^set -euo pipefail$|set -euo pipefail\n# new header line|' "${ROOT}/host/init.sh" > "${WORK}/init-changed.sh"
+sed 's|^set -euo pipefail$|set -euo pipefail\n# conflicting header|' "${ROOT}/host/init.sh" > "${WORK}/init-conflict.sh"
 
 PASS=0
 FAIL=0
@@ -49,7 +49,7 @@ new_project() {
 run_init() {
     local rc
     OUT=$(cd "${WORK}/proj" && printf "$1" | env -i PATH="${BIN}" HOME="${WORK}/home" NO_COLOR=1 \
-        script -qec "bash ${2:-${ROOT}/init.sh}" /dev/null 2>&1 | tr -d '\r')
+        script -qec "bash ${2:-${ROOT}/host/init.sh}" /dev/null 2>&1 | tr -d '\r')
     rc=${PIPESTATUS[0]}
     return "${rc}"
 }
@@ -68,8 +68,8 @@ check "a fresh project runs to the end" test "${rc}" -eq 0
 for s in ${STUBS}; do check "creates ${s}" has_file "${SB}/${s}"; done
 for s in build.sh run.sh start.sh restart.sh sync.sh; do check "${s} is executable" mode_is "${SB}/${s}" 755; done
 check "plugin.sh is not executable" mode_is "${SB}/plugin.sh" 644
-check "stubs use the repo name as the image tag" contains "${SB}/build.sh" 'demo-app'
-check "build.sh passes its arguments on to build-image.sh" contains "${SB}/build.sh" 'build-image.sh)" build-image "$@"'
+check "stubs hand the repo name to cs" contains "${SB}/build.sh" 'CS_PROJECT_NAME="Demo-App"'
+check "build.sh passes its arguments on to cs build" contains "${SB}/build.sh" '/cs)" cs build "$@"'
 check "records the stub hashes" has_file "${SB}/.init-hashes"
 for s in ${STUBS}; do check "keeps a copy of the ${s} template" has_file "${SB}/.init-base/${s}"; done
 
@@ -162,7 +162,7 @@ check ".envrc-cs comments every variable directly above it" test "$(awk '/^(# )?
 # The name is CS_LANGUAGE_VERSIONS everywhere; the bare name is not read or written anywhere.
 check "no file mentions the old LANGUAGE_VERSIONS name" test -z "$(grep -rnE '(^|[^A-Za-z_])LANGUAGE_VERSIONS' "${ROOT}" --exclude-dir=.git --exclude-dir=.tmp --exclude-dir=tests)"
 # The settings init.sh adds are listed in alphabetical (byte) order in its source.
-SETTING_NAMES=$(grep -oE '^add_setting [A-Z_]+' "${ROOT}/init.sh" | cut -d' ' -f2)
+SETTING_NAMES=$(grep -oE '^add_setting [A-Z_]+' "${ROOT}/host/init.sh" | cut -d' ' -f2)
 check "init.sh lists the .envrc-cs settings alphabetically" test "${SETTING_NAMES}" = "$(printf '%s\n' "${SETTING_NAMES}" | LC_ALL=C sort)"
 check ".envrc-cs documents the build and sync variables" test "$(grep -cE '^# export (CS_LANGUAGE_VERSIONS|CLAUDE_VERSION|CS_CONTAINER_NAME|CS_NPM_REGISTRY|CS_NPMRC|CS_REF|CS_USER_CONFIG_CHECKOUT)=' "${RC}")" -eq 7
 check ".envrc-cs lists its variables in alphabetical order" test "$(names "${RC}")" = "$(names "${RC}" | LC_ALL=C sort)"
@@ -221,13 +221,13 @@ check "...while the missing token is added" contains "${ENVF}" '# CS_USER_CONFIG
 new_project
 run_init "${NO3}"
 RS="${WORK}/restart"
-mkdir -p "${RS}/.claude/sandbox" "${RS}/bin"
-cp "${SB}/restart.sh" "${RS}/.claude/sandbox/restart.sh"
-printf '#!/bin/sh\necho "build${*:+ $*}" >> "%s/log"\n' "${RS}" > "${RS}/.claude/sandbox/build.sh"
-printf '#!/bin/sh\necho "start $*" >> "%s/log"\n' "${RS}" > "${RS}/.claude/sandbox/start.sh"
+mkdir -p "${RS}/host" "${RS}/bin"
+cp "${ROOT}/host/restart.sh" "${ROOT}/host/lib.sh" "${RS}/host/"
+printf '#!/bin/sh\necho "build${*:+ $*}" >> "%s/log"\n' "${RS}" > "${RS}/host/build.sh"
+printf '#!/bin/sh\necho "start $*" >> "%s/log"\n' "${RS}" > "${RS}/host/start.sh"
 printf '#!/bin/sh\ncase "$1" in\n  inspect) printf "%%s\\n" --name demo-app --continue "two words"; echo ;;\n  stop) echo "stop $2" >> "%s/log" ;;\nesac\n' "${RS}" > "${RS}/bin/docker"
-chmod +x "${RS}"/.claude/sandbox/*.sh "${RS}/bin/docker"
-restart() { OUT=$(env -i PATH="${RS}/bin:${BIN}" bash "${RS}/.claude/sandbox/restart.sh" "$@" 2>&1); }
+chmod +x "${RS}"/host/*.sh "${RS}/bin/docker"
+restart() { OUT=$(env -i PATH="${RS}/bin:${BIN}" CS_PROJECT_DIR="${RS}" CS_PROJECT_NAME=Demo-App bash "${RS}/host/restart.sh" "$@" 2>&1); }
 : > "${RS}/log"; restart
 check "restart builds, stops, then starts" test "$(tr '\n' '|' < "${RS}/log")" = "build|stop cs-demo-app|start --continue two words|"
 : > "${RS}/log"; restart --resume
@@ -239,7 +239,7 @@ check "--no-push with claude arguments builds without pushing and starts with th
 
 # --- GitHub Enterprise hosts --------------------------------------------------
 RCURL="${WORK}/curl.log"
-api_base() { bash -c 'source <(sed -n "/^api_base() {/,/^}/p" "$1"); api_base "$2"' _ "${ROOT}/init.sh" "$1"; }
+api_base() { bash -c 'source <(sed -n "/^api_base() {/,/^}/p" "$1"); api_base "$2"' _ "${ROOT}/host/init.sh" "$1"; }
 check "api.github.com for github.com" test "$(api_base github.com)" = https://api.github.com
 check "api.TENANT.ghe.com for a data-residency tenant" test "$(api_base corp.ghe.com)" = https://api.corp.ghe.com
 check "HOST/api/v3 for Enterprise Server" test "$(api_base git.corp.example)" = https://git.corp.example/api/v3
@@ -350,7 +350,7 @@ run_init 'n\nn\nn\n'
 check "an existing working classic token is recognised" mentions "a classic token is already in"
 
 new_project
-run_init "" "${ROOT}/init.sh --yes"
+run_init "" "${ROOT}/host/init.sh --yes"
 check "--yes still takes no token" lacks "Use a classic token anyway"
 printf '#!/bin/sh\nexit 0\n' > "${BIN}/curl"
 check "--yes does not touch the ruleset without gh" lacks "ruleset created"
@@ -362,19 +362,19 @@ check "--no keeps an edited stub" contains "${SB}/plugin.sh" 'mypkg'
 check "...and makes no backup" test "$(backups plugin.sh)" -eq 0
 
 new_project
-OUT=$(bash "${ROOT}/init.sh" --yes --no 2>&1); rc=$?
+OUT=$(bash "${ROOT}/host/init.sh" --yes --no 2>&1); rc=$?
 check "--yes with --no is an error" test "${rc}" -eq 2
 
 # --- start.sh: restart policy ---------------------------------------------------
 new_project
 run_init "${NO3}"
 SS="${WORK}/start"
-mkdir -p "${SS}/.claude/sandbox" "${SS}/bin"
-cp "${SB}/start.sh" "${SS}/.claude/sandbox/start.sh"
-printf '#!/bin/sh\necho "echo \\"\\$CS_DOCKER_FLAGS\\" > %s/flags"\n' "${SS}" > "${SS}/bin/curl"
+mkdir -p "${SS}/host" "${SS}/bin"
+cp "${ROOT}/host/start.sh" "${ROOT}/host/lib.sh" "${SS}/host/"
+printf '#!/bin/sh\necho "$CS_DOCKER_FLAGS" > %s/flags\n' "${SS}" > "${SS}/host/claude-sandbox.sh"
 printf '#!/bin/sh\nexit 1\n' > "${SS}/bin/docker"
-chmod +x "${SS}/bin/curl" "${SS}/bin/docker"
-start() { OUT=$(env -i PATH="${SS}/bin:${BIN}" "$@" bash "${SS}/.claude/sandbox/start.sh" 2>&1); }
+chmod +x "${SS}/host/claude-sandbox.sh" "${SS}/bin/docker"
+start() { OUT=$(env -i PATH="${SS}/bin:${BIN}" CS_PROJECT_DIR="${SS}" CS_PROJECT_NAME=Demo-App "$@" bash "${SS}/host/start.sh" 2>&1); }
 start
 check "start.sh runs the container detached with --restart=unless-stopped" contains "${SS}/flags" '-d -t --restart=unless-stopped'
 start CS_DOCKER_FLAGS="--restart=no"
@@ -410,19 +410,19 @@ check "...and reports the old commit" mentions "was 1111111"
 run_init "${NO3}"
 check "an unchanged pin is reported as staying" mentions "stays at 2222222"
 OUT=$(cd "${WORK}/proj" && printf "${NO3}" | env -i PATH="${BIN}" HOME="${WORK}/home" NO_COLOR=1 CS_REF=dev \
-    script -qec "bash ${ROOT}/init.sh" /dev/null 2>&1 | tr -d '\r')
+    script -qec "bash ${ROOT}/host/init.sh" /dev/null 2>&1 | tr -d '\r')
 check "CS_REF chooses the ref to pin" contains "${SB}/ref" "${SHA2}"
 OUT=$(cd "${WORK}/proj" && printf "${NO3}" | env -i PATH="${BIN}" HOME="${WORK}/home" NO_COLOR=1 CS_REF=${SHA1} \
-    script -qec "bash ${ROOT}/init.sh" /dev/null 2>&1 | tr -d '\r')
+    script -qec "bash ${ROOT}/host/init.sh" /dev/null 2>&1 | tr -d '\r')
 check "a commit SHA is pinned without a lookup" contains "${SB}/ref" "${SHA1}"
 OUT=$(cd "${WORK}/proj" && printf "${NO3}" | env -i PATH="${BIN}" HOME="${WORK}/home" NO_COLOR=1 CS_REF=latest \
-    script -qec "bash ${ROOT}/init.sh" /dev/null 2>&1 | tr -d '\r')
+    script -qec "bash ${ROOT}/host/init.sh" /dev/null 2>&1 | tr -d '\r')
 check "CS_REF=latest removes an existing pin" test ! -e "${SB}/ref"
 check "...and says the launcher follows main" mentions "the launcher follows main"
 check "...without warning that the ref could not be resolved" lacks "could not resolve"
 new_project
 OUT=$(cd "${WORK}/proj" && printf "${NO3}" | env -i PATH="${BIN}" HOME="${WORK}/home" NO_COLOR=1 LSR_FAIL=true \
-    script -qec "bash ${ROOT}/init.sh" /dev/null 2>&1 | tr -d '\r')
+    script -qec "bash ${ROOT}/host/init.sh" /dev/null 2>&1 | tr -d '\r')
 check "an unresolvable ref writes no pin" test ! -e "${SB}/ref"
 check "...and warns that main is used" mentions "fetch main"
 new_project; run_init "${NO3}" >/dev/null
@@ -450,9 +450,9 @@ check "...creating no stubs" test ! -e "${SB}/build.sh"
 printf '#!/bin/sh\ncat\n' > "${BIN}/envsubst"; chmod +x "${BIN}/envsubst"
 
 # --- usage ------------------------------------------------------------------
-OUT=$(bash "${ROOT}/init.sh" --help 2>&1); rc=$?
+OUT=$(bash "${ROOT}/host/init.sh" --help 2>&1); rc=$?
 check "--help exits 0" test "${rc}" -eq 0
-OUT=$(bash "${ROOT}/init.sh" --bogus 2>&1); rc=$?
+OUT=$(bash "${ROOT}/host/init.sh" --bogus 2>&1); rc=$?
 check "an unknown option is an error" test "${rc}" -eq 2
 
 echo
