@@ -798,12 +798,20 @@ if [ "$DO_RULESET" = 1 ]; then
 
     if [ -z "$TAGS_ID" ]; then
         TAG_BODY='{"name":"release tags","target":"tag","enforcement":"active","bypass_actors":[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"always"}],"conditions":{"ref_name":{"include":["refs/tags/v*"],"exclude":[]}},"rules":[{"type":"creation"},{"type":"update"},{"type":"deletion"}]}'
-        if RULESET_ERR=$(printf '%s' "$TAG_BODY" | gh api -X POST "repos/$REPO/rulesets" --input - 2>&1 >/dev/null); then
-            ok "tag ruleset created: only repo admins can create, move or delete v* tags"
+        if TAG_OUT=$(printf '%s' "$TAG_BODY" | gh api -X POST "repos/$REPO/rulesets" --input - --jq '(.bypass_actors // []) | length' 2>&1); then
+            ok "tag ruleset created for v* tags"
+            if [ "$TAG_OUT" = 0 ]; then
+                # A repository owned by a user, not an organization, keeps no bypass actor.
+                note "GitHub stored no bypass for it (a personal repo has none): nobody can create a v* tag"
+                note "until you disable the 'release tags' ruleset under Settings, Rules, and enable it again after"
+            else
+                note "repo admins can still create, move or delete v* tags"
+            fi
             note "check the sandbox token is bound by it: 'git push origin HEAD:refs/tags/v0.0.0-probe' must be refused (docs/security.md)"
         else
+            TAG_ERR=$TAG_OUT
             warn "GitHub refused to create the tag ruleset"
-            note "$(printf '%s' "$RULESET_ERR" | head -n 2)"
+            note "$(printf '%s' "$TAG_ERR" | head -n 2)"
         fi
     else
         note "ruleset 'release tags' already exists; left alone"
