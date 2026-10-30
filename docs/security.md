@@ -19,7 +19,7 @@ Where a fine-grained token cannot be used (for example a host that does not offe
 
 ## Merging and CI
 
-Nothing technical stops a session from merging its own pull request. The sandbox token has Contents and Pull requests write access and acts as your account, so GitHub will not let you approve what it opens, and the ruleset `init.sh` creates requires a PR but no approvals and no status checks. "Do not merge without approval" is a rule you give the agent, not one GitHub enforces. A real gate needs a second identity that does the merging or approving (a bot account with its own token, or a paid plan for reviews on a private repo). Short of that:
+Nothing technical stops a session from merging its own pull request. The sandbox token has Contents and Pull requests write access and acts as your account, so GitHub will not let you approve what it opens, and the ruleset `init.sh` creates requires a PR but no approvals and no status checks. "Do not merge without approval" is a rule you give the agent, not one GitHub enforces. A real gate needs a second identity that does the merging or approving ([how to set one up](#a-real-merge-gate)) (a bot account with its own token, or a paid plan for reviews on a private repo). Short of that:
 
 - add required status checks (for example `test`) to the ruleset once CI exists, so red code cannot merge;
 - CI runs what the PR contains, including `plugin.sh`, the Dockerfile and the workflows, so keep registry and deploy secrets out of workflows that run on pull requests, and build and push images only from `main` or tags (this repo's `release.yml` runs on tags only);
@@ -196,3 +196,57 @@ export CS_DOCKER_FLAGS="--dns 192.168.1.1"
 ```
 
 It is the cheapest step and the weakest: a session that connects by IP address skips it.
+
+## Further hardening
+
+These need repository admin rights or your router, so `init.sh` cannot apply them. Each has a check you can run from the sandbox to see whether it took.
+
+### A real merge gate
+
+The sandbox token acts as your account, so the agent can approve nothing and merge everything: a PR needs no approval. Make the agent a different GitHub account, and require an approval from yours. With a second account (a bot) that the sandbox token belongs to:
+
+1. Invite the bot to the repo with the Write role (Settings, Collaborators) and accept as the bot.
+2. As the bot, create a fine-grained token limited to this repo with Contents, Pull requests and Issues write and no Administration or Workflows, and give that token to the sandbox (`cs init`, the token step). The agent's PRs are now authored by the bot.
+3. As the repo admin, require one approval and make it count only when it comes after the last push:
+
+   ```bash
+   R=$(gh repo view --json nameWithOwner -q .nameWithOwner) && RID=$(gh api "repos/$R/rulesets" --jq '.[] | select(.name=="main") | .id') && gh api "repos/$R/rulesets/$RID" | jq '{name,target,enforcement,bypass_actors,conditions,rules} | (.rules[] | select(.type=="pull_request") | .parameters) += {"required_approving_review_count":1,"dismiss_stale_reviews_on_push":true,"require_last_push_approval":true}' | gh api -X PUT "repos/$R/rulesets/$RID" --input -
+   ```
+
+   Run it from the project, with your admin `gh` login.
+4. From now on you approve each PR in GitHub (a review as yourself) and then merge it, or have the agent merge it. The bot cannot approve its own PR, and a push after your approval needs a new one.
+
+To check it from the sandbox, open a PR, then try `gh pr merge <number> --merge`: it should be refused until you have approved. Keep `bypass_actors` empty, or the admin role can merge without approval. The bot account is as sensitive as the agent: never give it Administration, and use two-factor authentication on it.
+
+### Tags
+
+`release.yml` runs on any `v*` tag but waits for your approval (the `release` environment), so a tag the agent pushes cannot publish. To also stop the agent creating, moving or deleting those tags, add a tag ruleset (needs your admin login). The admin role can bypass it, so you can still tag a release:
+
+```bash
+R=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+gh api -X POST "repos/$R/rulesets" --input - <<'JSON'
+{"name":"release tags","target":"tag","enforcement":"active",
+ "bypass_actors":[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"always"}],
+ "conditions":{"ref_name":{"include":["refs/tags/v*"],"exclude":[]}},
+ "rules":[{"type":"creation"},{"type":"update"},{"type":"deletion"}]}
+JSON
+```
+
+Check from the sandbox: `git push origin HEAD:refs/tags/v0.0.0-probe` must be refused. If it succeeds, the sandbox token inherits your bypass: delete the probe (`git push origin --delete v0.0.0-probe`) and remove the `bypass_actors` entry, then tag releases by briefly disabling the ruleset.
+
+### The base image
+
+`container/Dockerfile` pins `node:22-slim` by digest, so a changed or compromised tag cannot alter your image. `.github/dependabot.yml` proposes the new digest, and updates the pinned actions in the workflows, weekly: review those PRs like any other. To update by hand, `docker buildx imagetools inspect node:22-slim` prints the digest.
+
+### DNS
+
+Before the sandbox connects to `github.com` it looks the name up, and those lookups go to your gateway, which passes them on to the internet's DNS servers. The gateway looks up any name, not only the ones you allowed. So a hostile process can leak data in the names it asks for: a lookup of `c2VjcmV0.attacker-example.com` carries `c2VjcmV0` to whoever runs that domain's name server, even though connecting to the site is blocked. It is slow (a few bytes per lookup), but it works. For code you review this is a minor risk; it is written down so the limit is clear.
+
+What UniFi can do about it:
+
+- **Make sure lookups go through the gateway, and nowhere else.** Content Filtering and Ad Blocking redirect plain DNS (port 53) from a network to the gateway, and a firewall rule can block DNS over TLS (port 853). This setup already does the equivalent: the sandbox range can reach only the gateway's port 53, and it can reach no other host except the ones you allowed.
+- **Not "resolve only these names".** Content Filtering blocks listed domains and categories for a network or a client; its allowlist only exempts a name from a block, so it cannot be made allow-only. UniFi therefore cannot close the leak.
+
+(This comes from UniFi's help center and forum as found by search, because the help pages could not be fetched when this was written: check it against your version.)
+
+To close the leak anyway, run a small DNS server for the sandbox, such as dnsmasq on the NAS. It answers only your allowed names and refuses everything else. Point the sandbox at it with `--dns` in `CS_DOCKER_FLAGS`, and make the UniFi rule let the sandbox range use DNS only at that server. One thing to test: the domain-based firewall rules depend on the gateway seeing the lookups, which a server that forwards the allowed names to the gateway still lets it do, but confirm the allowed hosts keep working.

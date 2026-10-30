@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # The base image digest in container/Dockerfile.
+  - package-ecosystem: docker
+    directory: /container
+    schedule:
+      interval: weekly
+  # Pinned actions in the workflows.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

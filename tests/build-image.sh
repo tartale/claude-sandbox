@@ -56,6 +56,7 @@ check "the credentials are not on the docker command line" test "$(grep '^docker
 build
 check "pushes by default" logged "docker push"
 build_args --no-push
+check "the base image is pinned by digest" grep -qE '^FROM node:[0-9a-z.-]+@sha256:[0-9a-f]{64}$' "${ROOT}/container/Dockerfile"
 check "the image is built from the Dockerfile in container/" logged "container/Dockerfile"
 check "--no-push builds" logged "docker build"
 check "...and does not push" not_logged "docker push"
