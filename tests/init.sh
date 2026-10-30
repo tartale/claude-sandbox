@@ -330,14 +330,14 @@ exit 0
 EOS
     chmod +x "${BIN}/gh"
 }
-owner_curl() {   # LOGIN -- a curl whose token belongs to LOGIN and can read, push and not administer
+owner_curl() {   # LOGIN [SCOPES] -- a curl whose token belongs to LOGIN, has SCOPES (classic) and can read, push and not administer
     cat > "${BIN}/curl" <<EOS
 #!/bin/bash
 case "\$*" in
     *info/refs*) printf 200 ;;
     *actions/permissions*) printf 'HTTP/2 404\r\n\r\n{}' ;;
     *user/repos*) printf 'HTTP/2 200\r\n\r\n[]' ;;
-    */user*) printf 'HTTP/2 200\r\nX-OAuth-Scopes: public_repo\r\n\r\n{"login":"$1"}' ;;
+    */user*) printf 'HTTP/2 200\r\nX-OAuth-Scopes: ${2:-public_repo}\r\n\r\n{"login":"$1"}' ;;
     *api*) printf 'HTTP/2 200\r\n\r\n{}' ;;
 esac
 EOS
@@ -400,16 +400,23 @@ check "with a bot and no stored token the token question defaults to yes" mentio
 
 # A bot's token is a classic one: a fine-grained token cannot reach a repo the bot only collaborates on.
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
-run_init 'y\ntartalebot\ny\nn\ny\n\nghp_abc\n\n'; rc=$?
+run_init 'y\ntartalebot\ny\nn\ny\n\nghp_abc\n'; rc=$?
 check "for a bot the token page is the classic one with the narrowest scope" mentions "settings/tokens/new?scopes=public_repo"
 check "...explaining why a fine-grained token will not do" mentions "cannot reach a repo that tartalebot only collaborates on"
-check "...and the warning says what the token reaches" mentions "it reaches every repo tartalebot can access"
-check "...with the bot as the answer's default, Enter accepts the classic token" contains "${WORK}/proj/.env" 'CS_GITHUB_TOKEN=ghp_abc'
+check "...saying what the token reaches, on the token page's instructions" mentions "invite tartalebot only to the repos the agent may touch"
+check "a bot has no choice, so there is no classic-token warning" lacks "classic token: it cannot be limited"
+check "...and no confirmation to answer" lacks "Use a classic token anyway"
+check "...but the scopes are still shown" mentions "scopes: public_repo"
+check "...and the token is stored" contains "${WORK}/proj/.env" 'CS_GITHUB_TOKEN=ghp_abc'
 check "...and the main ruleset then requires an approval" has_posted '"required_approving_review_count":1'
 check "the bot flow does not show the fine-grained page" test "$(grep -c personal-access-tokens/new <<<"${OUT}")" -eq 0
 
+gh_world tartale '' '' 'write'; owner_curl tartalebot 'public_repo, workflow'; new_project
+run_init 'y\ntartalebot\ny\nn\nn\n\nghp_abc\n'
+check "a bot's token with a powerful scope is still called out" mentions "powerful scopes the agent could use: workflow"
+
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project; printf 'true' > "${GHD}/private"
-run_init 'y\ntartalebot\ny\nn\nn\n\nghp_abc\n\n'
+run_init 'y\ntartalebot\ny\nn\nn\n\nghp_abc\n'
 check "for a private repo the scope is repo" mentions "settings/tokens/new?scopes=repo&"
 
 # The bot question stands on its own: it is asked, and acted on, without creating a token.
