@@ -15,8 +15,8 @@ for f in /usr/bin/* /bin/*; do
     ln -sf "$f" "${BIN}/${f##*/}" 2>/dev/null || true
 done
 cp "${ROOT}/cs" "${TREE}/cs"
-for c in init build run start restart sync network tag-images; do
-    printf '#!/bin/bash\necho "%s $* root=$CS_ROOT" >> "%s"\n' "${c}" "${LOG}" > "${TREE}/host/${c}.sh"
+for c in init build run start restart sync network pr release tag-images; do
+    printf '#!/bin/bash\necho "%s $* root=$CS_ROOT fetched=${CS_FETCHED:-}" >> "%s"\n' "${c}" "${LOG}" > "${TREE}/host/${c}.sh"
 done
 printf '#!/bin/bash\necho "stage $*" >> "%s"\n' "${LOG}" > "${TREE}/plugins/stage.sh"
 printf '#!/bin/bash\necho "test-one" >> "%s"\n' "${LOG}" > "${TREE}/tests/one.sh"
@@ -48,7 +48,7 @@ cs() { : > "${LOG}"; OUT=$(cd "${WORK}" && env -i PATH="${BIN}" HOME="${WORK}" "
 cs "${TREE}/cs"; rc=$?
 check "cs with no arguments prints the usage" mentions "Usage: cs [OPTIONS] COMMAND [ARGS]..."
 cs "${TREE}/cs" --help
-COMMANDS="init build run start restart sync network test image push pull all tags clean stage-plugins"
+COMMANDS="init build run start restart sync network pr release test image push pull all tags clean stage-plugins"
 for c in ${COMMANDS}; do
     check "cs --help lists ${c}" mentions "  ${c}"
 done
@@ -63,7 +63,7 @@ check "an unknown command is an error" test "${rc}" -eq 2
 check "...that says so" mentions "no such command: bogus"
 
 # --- dispatch ---------------------------------------------------------------------
-for c in init build run start restart sync network; do
+for c in init build run start restart sync network pr release; do
     cs "${TREE}/cs" "${c}" one "two words"
     check "cs ${c} runs host/${c}.sh with its arguments" logged "${c} one two words root=${TREE}"
 done
@@ -77,6 +77,7 @@ check "cs test runs every script in tests/" test "$(grep -c '^test-' "${LOG}")" 
 # --- fetched with curl: no checkout around ------------------------------------------
 cs bash -c "$(cat "${ROOT}/cs")" cs run --continue
 check "from curl, cs downloads the tree and runs the command from it" logged "run --continue root="
+check "...marking it as a download, so the owner commands refuse" logged "fetched=1"
 check "...from the main version by default" logged "curl https://codeload.github.com/tartale/claude-sandbox/tar.gz/main"
 root=$(sed -n 's/.*run --continue root=//p' "${LOG}")
 check "...and removes the download afterwards" test ! -e "${root}"
@@ -88,6 +89,9 @@ cs env CS_REF=0123456789abcdef bash -c "$(cat "${ROOT}/cs")" cs run
 check "a commit is fetched as given" logged "tar.gz/0123456789abcdef"
 cs "${TREE}/cs" run
 check "a checkout never downloads" not_logged "curl "
+check "...and is not marked as a download" not_logged "fetched=1"
+cs "${TREE}/cs" --help
+check "cs --help has an Owner commands group" mentions "Owner commands:"
 
 # --- development commands ------------------------------------------------------------
 cs "${TREE}/cs" clean
