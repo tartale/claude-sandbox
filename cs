@@ -77,16 +77,18 @@ usage_network() { echo "Usage: cs network setup bridge|macvlan|ipvlan [OPTIONS] 
 
   Set up the sandbox network, once per host. See docs/security.md. Run cs network without
   arguments for every option."; }
-usage_pr() { echo "Usage: cs pr list | approve N [--yes] | merge N [--yes]
+usage_pr() { echo "Usage: cs pr list | approve [merge] N [--yes] | merge N [--yes]
 
   As the repo owner, with gh signed in as the admin (not the sandbox's bot): list the open pull
   requests, approve one (after its author, checks and files are shown), or merge an approved one.
+  Actions run in the order given: cs pr approve merge 5 approves #5, then merges it, on one question.
   --yes skips the question. --repo OWNER/NAME names the repository (default: the current directory's).
   Run from a checkout (./cs): these act with your admin login, so they do not run from a download."; }
-usage_release() { echo "Usage: cs release tag vX.Y.Z [--yes] | approve [vX.Y.Z] [--yes]
+usage_release() { echo "Usage: cs release tag [approve] vX.Y.Z [--yes] | approve [vX.Y.Z] [--yes]
 
   As the repo owner: tag the default branch's latest commit as a release (the tag ruleset lets only you
-  do it), then approve the release run that waits for you. --yes skips the question. --repo OWNER/NAME
+  do it), then approve the release run that waits for you. cs release tag approve v1.2.3 does both,
+  on one question, waiting for the run to start. --yes skips the question. --repo OWNER/NAME
   names the repository. Run from a checkout (./cs), not a download."; }
 usage_test() { echo "Usage: cs test
 
