@@ -5,6 +5,11 @@ updates:
     directory: /container
     schedule:
       interval: weekly
+    # Only digest refreshes of the pinned node:22-slim: moving to another Node release is a
+    # decision made by hand.
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
   # Pinned actions in the workflows.
   - package-ecosystem: github-actions
     directory: /
