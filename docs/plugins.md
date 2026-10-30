@@ -8,16 +8,16 @@ Put the project's plugins in `.claude/sandbox/plugin.sh`, then build:
 .claude/sandbox/build.sh
 ```
 
-It builds the project image and pushes it to `CS_IMAGE_REPO:CS_IMAGE_TAG`; `run.sh` and `start.sh` use the same tag. `--no-push` builds without pushing, for an image only this machine uses (`build-image.sh` takes it too):
+It builds the project image and pushes it to `CS_IMAGE_REPO:CS_IMAGE_TAG`; `run.sh` and `start.sh` use the same tag. `--no-push` builds without pushing, for an image only this machine uses (`cs build --no-push` anywhere):
 
 ```bash
 .claude/sandbox/build.sh --no-push
 ```
 
- The stub wraps the `build-image.sh` one-liner, which also works on its own, with no repo checkout:
+ The stub runs `cs build`, which also works on its own, with no repo checkout:
 
 ```bash
-CS_IMAGE_TAG=my-sandbox /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+CS_IMAGE_TAG=my-sandbox /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs build
 ```
 
 Then launch it by setting `CS_IMAGE_TAG` to match:
@@ -26,34 +26,34 @@ Then launch it by setting `CS_IMAGE_TAG` to match:
 CS_IMAGE_TAG=my-sandbox .claude/sandbox/run.sh
 ```
 
-The examples below call `build-image.sh` directly to show its environment variables.
+The examples below call `cs build` directly to show its environment variables.
 
 ### Build settings
 
-`build-image.sh` reads these from the environment, so the stubs pick up the ones in `.envrc-cs` (each is documented there): `CS_IMAGE_REPO`, `CS_IMAGE_TAG`, `CS_LANGUAGE_VERSIONS` (`"go-1.25.10"`-style pins) and `CLAUDE_VERSION`. `PLUGINS` (a built-in plugin name, local path or URL) is set by `build.sh` to `plugin.sh`; set it yourself when calling `build-image.sh` directly.
+`cs build` reads these from the environment, so the stubs pick up the ones in `.envrc-cs` (each is documented there): `CS_IMAGE_REPO`, `CS_IMAGE_TAG`, `CS_LANGUAGE_VERSIONS` (`"go-1.25.10"`-style pins) and `CLAUDE_VERSION`. `PLUGINS` (a built-in plugin name, local path or URL) is set by `build.sh` to `plugin.sh`; set it yourself when calling `cs build` directly (it overrides `plugin.sh`).
 
 A built-in language plugin:
 
 ```bash
-PLUGINS=python3 CS_IMAGE_TAG=my-python /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+PLUGINS=python3 CS_IMAGE_TAG=my-python /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs build
 ```
 
 A built-in plugin with a version pin:
 
 ```bash
-PLUGINS=go CS_LANGUAGE_VERSIONS="go-1.24.0" CS_IMAGE_TAG=go-1.24 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+PLUGINS=go CS_LANGUAGE_VERSIONS="go-1.24.0" CS_IMAGE_TAG=go-1.24 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs build
 ```
 
 A local custom plugin script:
 
 ```bash
-PLUGINS=./my-tools.sh CS_IMAGE_TAG=my-tools /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+PLUGINS=./my-tools.sh CS_IMAGE_TAG=my-tools /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs build
 ```
 
 A remote custom plugin script:
 
 ```bash
-PLUGINS=https://example.com/my-tools.sh CS_IMAGE_TAG=my-tools /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+PLUGINS=https://example.com/my-tools.sh CS_IMAGE_TAG=my-tools /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs build
 ```
 
 To build from another npm registry, set `CS_NPM_REGISTRY` (its URL, with the `https://`). If it needs credentials, put them in an npmrc file on the host and set `CS_NPMRC` to its path. The file is mounted as a BuildKit secret, so the token is not in the image or its history. Both apply to Claude Code and to the plugins' `npm install` steps. For example, in `.envrc-cs`:
@@ -107,7 +107,7 @@ needed. Browser revisions are tied to the Playwright version, so pin it to match
 dependency:
 
 ```bash
-PLUGINS=playwright CS_LANGUAGE_VERSIONS="playwright-1.55.0" CS_IMAGE_TAG=my-playwright ./build-image.sh
+PLUGINS=playwright CS_LANGUAGE_VERSIONS="playwright-1.55.0" CS_IMAGE_TAG=my-playwright ./cs build
 ```
 
 ### Using a single plugin
@@ -117,13 +117,13 @@ Pass a built-in name or path via `PLUGINS`:
 With no repo checkout:
 
 ```bash
-PLUGINS=go CS_IMAGE_TAG=my-go /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+PLUGINS=go CS_IMAGE_TAG=my-go /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs build
 ```
 
 With a local repo checkout:
 
 ```bash
-PLUGINS=plugins/languages/go.sh CS_IMAGE_TAG=my-tag make image
+PLUGINS=plugins/languages/go.sh CS_IMAGE_TAG=my-tag ./cs image
 ```
 
 ### Pinning a language version
@@ -133,13 +133,13 @@ Pass `CS_LANGUAGE_VERSIONS` as a space-separated list of `<language>-<version>` 
 With no repo checkout:
 
 ```bash
-PLUGINS=go CS_LANGUAGE_VERSIONS="go-1.25.10" CS_IMAGE_TAG=go-1.25.10 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+PLUGINS=go CS_LANGUAGE_VERSIONS="go-1.25.10" CS_IMAGE_TAG=go-1.25.10 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs build
 ```
 
 With a local repo checkout:
 
 ```bash
-PLUGINS=plugins/languages/go.sh CS_IMAGE_TAG=go-1.25.10 CS_LANGUAGE_VERSIONS="go-1.25.10" make image
+PLUGINS=plugins/languages/go.sh CS_IMAGE_TAG=go-1.25.10 CS_LANGUAGE_VERSIONS="go-1.25.10" ./cs image
 ```
 
 When a plugin's entry is absent from `CS_LANGUAGE_VERSIONS`, it installs the latest stable version.
@@ -156,13 +156,13 @@ Point `PLUGINS` at a local directory of `.sh` scripts to run all of them, in alp
 With no repo checkout:
 
 ```bash
-PLUGINS=./my-plugins/ CS_IMAGE_TAG=my-tag /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+PLUGINS=./my-plugins/ CS_IMAGE_TAG=my-tag /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs build
 ```
 
 With a local repo checkout:
 
 ```bash
-PLUGINS=plugins/languages CS_IMAGE_TAG=my-tag make image
+PLUGINS=plugins/languages CS_IMAGE_TAG=my-tag ./cs image
 ```
 
 Prefix filenames with numbers to control order when it matters (`01-go.sh`, `02-rust.sh`, …).
@@ -200,26 +200,26 @@ EOF
 Build it with no repo checkout:
 
 ```bash
-PLUGINS=./go-react.sh CS_IMAGE_TAG=go-react /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+PLUGINS=./go-react.sh CS_IMAGE_TAG=go-react /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs build
 ```
 
 Or with a local repo checkout:
 
 ```bash
-PLUGINS=./go-react.sh CS_IMAGE_TAG=go-react make image
+PLUGINS=./go-react.sh CS_IMAGE_TAG=go-react ./cs image
 ```
 
 Each sourced plugin respects `CS_LANGUAGE_VERSIONS`, so you can still pin versions:
 
 ```bash
 PLUGINS=./go-react.sh CS_IMAGE_TAG=go-react \
-  CS_LANGUAGE_VERSIONS="go-1.25.10" /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/build-image.sh)"
+  CS_LANGUAGE_VERSIONS="go-1.25.10" /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs build
 ```
 
 ### Runtime plugins
 
-`PLUGINS` also works at runtime with `claude-sandbox.sh`. The script (or directory) is bind-mounted into the container and executed before Claude starts, letting you run setup steps without rebuilding the image:
+`PLUGINS` also works at runtime with `host/claude-sandbox.sh`. The script (or directory) is bind-mounted into the container and executed before Claude starts, letting you run setup steps without rebuilding the image:
 
 ```bash
-PLUGINS=plugins/languages/python2.sh ./claude-sandbox.sh
+PLUGINS=plugins/languages/python2.sh ./host/claude-sandbox.sh
 ```

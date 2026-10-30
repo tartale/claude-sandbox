@@ -23,7 +23,7 @@ Runs [Claude Code](https://github.com/anthropics/claude-code) in a Docker contai
 Run this once from the project's root, on your host (not inside a sandbox):
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/init.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs init
 ```
 
 It asks everything up front, then creates:
@@ -32,7 +32,7 @@ It asks everything up front, then creates:
 - `.claude/sandbox/ref`, which pins the launcher to a commit of this repo, so a change to `main` reaches the project only when you run `init.sh` again. `CS_REF=<commit|tag|branch>` chooses what to pin; `CS_REF=latest` pins nothing and removes an existing pin, so the project follows `main`; put `export CS_REF=latest` in `.envrc-cs` to keep that across `init.sh` runs. To pin once without editing anything:
 
   ```bash
-  CS_REF=latest /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/init.sh)"
+  CS_REF=latest /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs init
   ```
 - `.envrc-cs`, with the launcher settings (each with a comment saying what it does), and a `source_env .envrc-cs` line in `.envrc`; and a marked block of `CS_` entries in `.env`. Entries are kept in alphabetical order, and nothing else in either file is touched (see [Configure](#configure)).
 - Optionally: a fine-grained GitHub token for `git` and `gh` in the sandbox (a classic token is accepted after a warning), a package-only `ghcr.io` login, and a `main` branch ruleset (needs `gh` logged in as a repo admin).
@@ -40,7 +40,7 @@ It asks everything up front, then creates:
 `--yes` and `--no` answer the yes/no questions for runs with nobody at the keyboard; the token and registry login need a pasted secret, so both skip them. From the one-liner, put them after the command string with a placeholder first:
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/init.sh)" init.sh --yes
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs init --yes
 ```
 
 Commit `.claude/sandbox/` (including `ref`). Run `init.sh` again to update the scripts or move the pin.
@@ -104,6 +104,16 @@ docker stop cs-<repo-name>
 ```bash
 CS_IMAGE_TAG=go-1.25.10 .claude/sandbox/run.sh
 ```
+
+## The `cs` command
+
+Everything above runs through `cs`, which needs no installation. From a checkout it is `./cs`; anywhere else, fetch and run it in one go (it downloads the repo's files for the version in `CS_REF`, default `main`, and removes them afterwards):
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartale/claude-sandbox/refs/heads/main/cs)" cs --help
+```
+
+`cs --help` lists the commands and `cs COMMAND --help` shows each one's options. The `.claude/sandbox` scripts in a project are thin wrappers that hand the project to `cs build`, `cs run`, `cs start`, `cs restart` and `cs sync`.
 
 ## More
 

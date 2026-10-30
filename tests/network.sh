@@ -74,7 +74,7 @@ logged() { grep -qF -- "$1" "${ST}/docker.log"; }
 reset() { find "${ST}" -mindepth 1 -delete; printf 'nameserver 192.168.1.53\n' > "${WORK}/resolv.conf"; }
 # net_sh ARGS... -- run network.sh with the stubs, the resolv.conf under test, and the Wi-Fi flag.
 net_sh() {
-    sed "s#/etc/resolv.conf#${WORK}/resolv.conf#; s#/sys/class/net/#${WORK}/sys/#" "${ROOT}/network.sh" > "${WORK}/n.sh"
+    sed "s#/etc/resolv.conf#${WORK}/resolv.conf#; s#/sys/class/net/#${WORK}/sys/#" "${ROOT}/host/network.sh" > "${WORK}/n.sh"
     OUT=$(env -i PATH="${BIN}" HOME="${WORK}" STUB_UID="${STUB_UID:-0}" STUB_OS="${STUB_OS:-Linux}" STUB_DOCKER_OS="${STUB_DOCKER_OS:-Debian}" bash "${WORK}/n.sh" "$@" 2>&1); return $?
 }
 
@@ -166,7 +166,7 @@ reset
 net_sh setup bridge --yes
 net_sh setup ipvlan --ip-range 192.168.1.192/28 --yes; rc=$?
 check "ipvlan setup does not accept an existing bridge of the same name" test "${rc}" -ne 0
-check "...says what exists and how to clear it" mentions "network.sh remove"
+check "...says what exists and how to clear it" mentions "cs network remove"
 check "...and does not claim to have set anything up" lacks "Use it"
 reset
 net_sh setup macvlan --ip-range 192.168.1.192/28 --yes

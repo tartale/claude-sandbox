@@ -44,7 +44,7 @@ OUT=""
 run_launcher() {
     local rc
     OUT=$(cd "${WORK}/proj" && env -i PATH="${WORK}/bin:${PATH}" HOME="${WORK}/home" "$@" \
-        script -qec "bash ${ROOT}/claude-sandbox.sh" /dev/null </dev/null 2>&1 | tr -d '\r')
+        script -qec "bash ${ROOT}/host/claude-sandbox.sh" /dev/null </dev/null 2>&1 | tr -d '\r')
     rc=${PIPESTATUS[0]}
     return "${rc}"
 }
@@ -96,7 +96,7 @@ check "a sandbox login is stored on a host with none" test -f "${WORK}/home/.cla
 
 mkdir -p "${WORK}/elsewhere/proj"
 OUT=$(cd "${WORK}/elsewhere/proj" && env -i PATH="${WORK}/bin:${PATH}" HOME="${WORK}/home" \
-    script -qec "bash ${ROOT}/claude-sandbox.sh" /dev/null </dev/null 2>&1 | tr -d '\r')
+    script -qec "bash ${ROOT}/host/claude-sandbox.sh" /dev/null </dev/null 2>&1 | tr -d '\r')
 check "a project moved to another folder keeps its state dir" has "ARG:${ST}/.claude:/home/claude/.claude"
 rm -rf "${WORK}/elsewhere"
 
@@ -176,7 +176,7 @@ for tool in bash env script tr sed grep cut paste cat id uname openssl basename 
     ln -sf "$(command -v "${tool}")" "${WORK}/nobin/${tool}"
 done
 OUT=$(cd "${WORK}/proj" && env -i PATH="${WORK}/nobin" HOME="${WORK}/home" \
-    "$(command -v bash)" "${ROOT}/claude-sandbox.sh" 2>&1 </dev/null); rc=$?
+    "$(command -v bash)" "${ROOT}/host/claude-sandbox.sh" 2>&1 </dev/null); rc=$?
 check "missing envsubst stops the launcher" test "${rc}" -ne 0
 check "missing envsubst prints install help" mentions "brew install gettext"
 

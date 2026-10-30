@@ -11,8 +11,8 @@ export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER
 CLONE="${WORK}/clone"
 STAMP="${WORK}/stamp"
 PATCH="${WORK}/claude-user.patch"
-sed "s#/home/claude/.claude-user#${CLONE}#; s#/tmp/claude-user-pull.stamp#${STAMP}#" "${ROOT}/user-pull.sh" > "${WORK}/pull.sh"
-sed "s#/home/claude/.claude-user#${CLONE}#; s#/workspace/.tmp/claude-user.patch#${PATCH}#" "${ROOT}/user-sync.sh" > "${WORK}/sync.sh"
+sed "s#/home/claude/.claude-user#${CLONE}#; s#/tmp/claude-user-pull.stamp#${STAMP}#" "${ROOT}/container/user-pull.sh" > "${WORK}/pull.sh"
+sed "s#/home/claude/.claude-user#${CLONE}#; s#/workspace/.tmp/claude-user.patch#${PATCH}#" "${ROOT}/container/user-sync.sh" > "${WORK}/sync.sh"
 
 PASS=0
 FAIL=0
