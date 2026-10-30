@@ -240,8 +240,13 @@ Check from the sandbox: `git push origin HEAD:refs/tags/v0.0.0-probe` must be re
 
 ### DNS
 
-A sandbox that resolves through the gateway can still look up any name: the lookup reaches the upstream resolvers, so a determined session can leak a little data in the names it asks for. What UniFi offers, from its help center and forum (the help pages themselves could not be fetched when this was written, so check your version):
+Before the sandbox connects to `github.com` it looks the name up, and those lookups go to your gateway, which passes them on to the internet's DNS servers. The gateway looks up any name, not only the ones you allowed. So a hostile process can leak data in the names it asks for: a lookup of `c2VjcmV0.attacker-example.com` carries `c2VjcmV0` to whoever runs that domain's name server, even though connecting to the site is blocked. It is slow (a few bytes per lookup), but it works. For code you review this is a minor risk; it is written down so the limit is clear.
 
-- **Forcing DNS to the gateway.** Content Filtering and Ad Blocking on a network redirect plain DNS (port 53) to the gateway. DNS over TLS (port 853) has to be blocked with a firewall rule; DNS over HTTPS cannot be told from other HTTPS, so the allow-list of hosts is what stops it. This setup already blocks both, because the sandbox range may reach only the hosts you allowed.
-- **No name allow-list.** Content Filtering blocks categories and listed domains per network or per client; its allowlist only overrides a block, so it is not allow-only. UniFi cannot say "resolve only these names".
-- **If the leak matters,** run a small resolver for the sandbox range that answers only the allowed names (dnsmasq or AdGuard Home on the NAS or the VLAN, set with `--dns` in `CS_DOCKER_FLAGS`), forwarding those to the gateway and returning NXDOMAIN for the rest, and let the sandbox range reach only that resolver. The domain rules need the gateway to see the lookups, which a forwarding resolver still sends it: test that the allowed hosts keep working.
+What UniFi can do about it:
+
+- **Make sure lookups go through the gateway, and nowhere else.** Content Filtering and Ad Blocking redirect plain DNS (port 53) from a network to the gateway, and a firewall rule can block DNS over TLS (port 853). This setup already does the equivalent: the sandbox range can reach only the gateway's port 53, and it can reach no other host except the ones you allowed.
+- **Not "resolve only these names".** Content Filtering blocks listed domains and categories for a network or a client; its allowlist only exempts a name from a block, so it cannot be made allow-only. UniFi therefore cannot close the leak.
+
+(This comes from UniFi's help center and forum as found by search, because the help pages could not be fetched when this was written: check it against your version.)
+
+To close the leak anyway, run a small DNS server for the sandbox, such as dnsmasq on the NAS. It answers only your allowed names and refuses everything else. Point the sandbox at it with `--dns` in `CS_DOCKER_FLAGS`, and make the UniFi rule let the sandbox range use DNS only at that server. One thing to test: the domain-based firewall rules depend on the gateway seeing the lookups, which a server that forwards the allowed names to the gateway still lets it do, but confirm the allowed hosts keep working.
