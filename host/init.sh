@@ -615,7 +615,7 @@ if [ "$DO_TOKEN" = 1 ]; then
         # reaches is what the bot account can access: invite the bot only to the repos it may touch.
         CLASSIC_SCOPE=public_repo
         case "${REPO_INFO:-}" in true*) CLASSIC_SCOPE=repo ;; esac   # REPO_INFO is "private<TAB>admin"
-        URL="https://$GITHUB_HOST/settings/tokens/new?scopes=$CLASSIC_SCOPE&description=claude-sandbox"
+        URL="https://$GITHUB_HOST/settings/tokens/new?scopes=$CLASSIC_SCOPE&description=cs-${REPO#*/}"
         note "GitHub's fine-grained tokens cannot reach a repo that $BOT only collaborates on, so create a"
         note "classic token as $BOT, with the scope $CLASSIC_SCOPE and nothing else (no workflow, no admin:*)."
         note "It reaches every repo $BOT can access, so invite $BOT only to the repos the agent may touch:"
