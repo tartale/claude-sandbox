@@ -160,7 +160,15 @@ names() { grep -oE '^(# )?(export )?[A-Z][A-Z0-9_]*=' "$1" | sed -E 's/^(# )?(ex
 check "the settings go in .envrc-cs" contains "${RC}" 'export CS_IMAGE_REPO=ghcr.io/tartale/claude-sandbox'
 check ".envrc-cs comments every variable directly above it" test "$(awk '/^(# )?(export )?[A-Z_]+=/ && prev ~ /^# [A-Za-z-]/ { n++ } { prev = $0 } END { print n + 0 }' "${RC}")" -eq "$(grep -cE '^(# )?(export )?[A-Z_]+=' "${RC}")"
 # The name is CS_LANGUAGE_VERSIONS everywhere; the bare name is not read or written anywhere.
-check "no file mentions the old LANGUAGE_VERSIONS name" test -z "$(grep -rnE '(^|[^A-Za-z_])LANGUAGE_VERSIONS' "${ROOT}" --exclude-dir=.git --exclude-dir=.tmp --exclude-dir=tests)"
+# Tracked files only in a checkout, so a stale ignored file (plugins/.build, .env) cannot fail it.
+old_name_hits() {
+    if git -C "${ROOT}" rev-parse --git-dir >/dev/null 2>&1; then
+        git -C "${ROOT}" grep -nE '(^|[^A-Za-z_])LANGUAGE_VERSIONS' -- . ':!tests'
+    else
+        grep -rnE '(^|[^A-Za-z_])LANGUAGE_VERSIONS' "${ROOT}" --exclude-dir=tests
+    fi
+}
+check "no file mentions the old LANGUAGE_VERSIONS name" test -z "$(old_name_hits)"
 # The settings init.sh adds are listed in alphabetical (byte) order in its source.
 SETTING_NAMES=$(grep -oE '^add_setting [A-Z_]+' "${ROOT}/host/init.sh" | cut -d' ' -f2)
 check "init.sh lists the .envrc-cs settings alphabetically" test "${SETTING_NAMES}" = "$(printf '%s\n' "${SETTING_NAMES}" | LC_ALL=C sort)"
