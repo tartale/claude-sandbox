@@ -601,12 +601,24 @@ fi
 # --- fine-grained PAT for git and gh -----------------------------------------
 if [ "$DO_TOKEN" = 1 ]; then
     say "Token for $REPO"
-    URL="https://$GITHUB_HOST/settings/personal-access-tokens/new?name=cs-${REPO#*/}&description=claude-sandbox&expires_in=90&contents=write&pull_requests=write&issues=write&metadata=read"
-    note "In the browser: Only select repositories -> $REPO. Keep the pre-filled"
-    note "permissions (Contents, Pull requests, Issues: RW). No Administration or Workflows."
-    note "$URL"
-    note "If a fine-grained token cannot be used, a classic token (ghp_) is accepted after a warning."
-    [ -z "$BOT" ] || note "Sign in as $BOT (a private window) before opening the token page: the token must be the bot's."
+    if [ -n "$BOT" ]; then
+        # A fine-grained token can only reach repos its own account owns (or an organization's), so
+        # it cannot reach a repo the bot merely collaborates on. A classic token can, and what it
+        # reaches is what the bot account can access: invite the bot only to the repos it may touch.
+        CLASSIC_SCOPE=public_repo
+        case "${REPO_INFO:-}" in true*) CLASSIC_SCOPE=repo ;; esac   # REPO_INFO is "private<TAB>admin"
+        URL="https://$GITHUB_HOST/settings/tokens/new?scopes=$CLASSIC_SCOPE&description=claude-sandbox"
+        note "GitHub's fine-grained tokens cannot reach a repo that $BOT only collaborates on, so create a"
+        note "classic token as $BOT, with the scope $CLASSIC_SCOPE and nothing else (no workflow, no admin:*):"
+        note "$URL"
+        note "Sign in as $BOT (a private window) before opening the page: the token must be the bot's."
+    else
+        URL="https://$GITHUB_HOST/settings/personal-access-tokens/new?name=cs-${REPO#*/}&description=claude-sandbox&expires_in=90&contents=write&pull_requests=write&issues=write&metadata=read"
+        note "In the browser: Only select repositories -> $REPO. Keep the pre-filled"
+        note "permissions (Contents, Pull requests, Issues: RW). No Administration or Workflows."
+        note "$URL"
+        note "If a fine-grained token cannot be used, a classic token (ghp_) is accepted after a warning."
+    fi
     read -r -p "  Press Enter to open it (Ctrl-C to stop)... " _
     (command -v open >/dev/null && open "$URL") || (command -v xdg-open >/dev/null && xdg-open "$URL") || warn "could not open a browser; use the link above"
 
@@ -618,11 +630,17 @@ if [ "$DO_TOKEN" = 1 ]; then
             problem=$(classic_token_problem "$TOKEN") || die "$problem"
             ok "push access"
             scopes=$(classic_scopes "$TOKEN")
-            warn "classic token: it cannot be limited to one repository, so it reaches every repo your account can"
+            if [ -n "$BOT" ]; then
+                warn "classic token: it cannot be limited to one repository; it reaches every repo $BOT can access"
+                note "invite $BOT only to the repos the agent may touch"
+            else
+                warn "classic token: it cannot be limited to one repository, so it reaches every repo your account can"
+            fi
             note "scopes: ${scopes:-none reported}"
             risky=$(printf '%s\n' "$scopes" | tr -d ' ' | tr ',' '\n' | grep -E '^(admin:|delete_repo$|workflow$|delete:packages$)' | paste -sd, - || true)
             [ -z "$risky" ] || warn "it also carries powerful scopes the agent could use: $risky"
-            ask_def "  Use a classic token anyway?" N || die "create a fine-grained token limited to $REPO instead"
+            CLASSIC_DEFAULT=N; [ -z "$BOT" ] || CLASSIC_DEFAULT=Y
+            ask_def "  Use a classic token anyway?" "$CLASSIC_DEFAULT" 0 || die "create a fine-grained token limited to $REPO instead"
         else
             problem=$(token_problem "$TOKEN") || die "$problem"
             ok "push access, no Administration"
