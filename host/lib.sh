@@ -18,10 +18,16 @@ cs_project_env() {
 
 # --- owner commands (cs pr, cs release): they act on GitHub with your admin login ---------------
 
-# cs_owner_guard -- refuse to run from a downloaded copy, and unless gh is signed in as an admin of
+# cs_owner_guard -- say which version is running (when downloaded), and refuse unless gh is signed in as an admin of
 # the repo. Sets CS_REPO (OWNER/NAME; --repo overrides the current directory's) and CS_ME (your login).
 cs_owner_guard() {
-    [ -z "${CS_FETCHED:-}" ] || cs_die "run these from a checkout you have reviewed (./cs): they act with your admin login, so they do not run from a downloaded copy"
+    if [ -n "${CS_FETCHED:-}" ]; then
+        case "${CS_REF_SOURCE:-}" in
+            pin) echo "running claude-sandbox ${CS_VERSION:-?}, this project's pinned ref" >&2 ;;
+            env) echo "running claude-sandbox ${CS_VERSION:-?} from CS_REF=${CS_REF_USED:-?}" >&2 ;;
+            *) echo "running claude-sandbox ${CS_VERSION:-?} from ${CS_REF_USED:-main}, not pinned: run init.sh to pin this project, or set CS_REF=<commit>" >&2 ;;
+        esac
+    fi
     command -v gh >/dev/null || cs_die "gh is required"
     CS_REPO=${CS_REPO_OVERRIDE:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)}
     [ -n "$CS_REPO" ] || cs_die "could not tell which repository: run this inside its checkout, or pass --repo OWNER/NAME"

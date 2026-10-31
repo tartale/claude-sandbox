@@ -93,9 +93,15 @@ check "merge waits for running checks" not_logged "pr merge"
 
 world; printf 'false' > "${D}/admin"; pr '' bash "${ROOT}/host/pr.sh" approve 5 --yes; rc=$?
 check "a login that is not the repo's admin is refused" mentions "is not an admin of o/r"
-world; pr '' env CS_FETCHED=1 bash "${ROOT}/host/pr.sh" approve 5 --yes; rc=$?
-check "the commands do not run from a downloaded copy" mentions "do not run from a downloaded copy"
-check "...and touch nothing" test ! -s "${D}/log"
+world; pr '' env CS_FETCHED=1 CS_VERSION=abc123 CS_REF_SOURCE=pin bash "${ROOT}/host/pr.sh" approve 5 --yes; rc=$?
+check "from a download the commands run and say which version, here the project's pin" mentions "running claude-sandbox abc123, this project's pinned ref"
+check "...and do the work" logged "gh pr review 5 --repo o/r --approve"
+world; pr '' env CS_FETCHED=1 CS_VERSION=abc123 CS_REF_SOURCE=default CS_REF_USED=main bash "${ROOT}/host/pr.sh" list
+check "an unpinned download says so, and how to pin" mentions "running claude-sandbox abc123 from main, not pinned: run init.sh to pin this project, or set CS_REF=<commit>"
+world; pr '' env CS_FETCHED=1 CS_VERSION=abc123 CS_REF_SOURCE=env CS_REF_USED=v1.2.3 bash "${ROOT}/host/pr.sh" list
+check "a version chosen with CS_REF is named" mentions "running claude-sandbox abc123 from CS_REF=v1.2.3"
+world; pr '' bash "${ROOT}/host/pr.sh" list
+check "run from a checkout there is no version notice" lacks "running claude-sandbox"
 world; pr '' bash "${ROOT}/host/pr.sh" approve; rc=$?
 check "approve needs a number" test "${rc}" -eq 2
 world; printf 'x/y' > "${D}/repo"; pr '' bash "${ROOT}/host/pr.sh" list --repo o/r
@@ -133,8 +139,9 @@ world; pr '' bash "${ROOT}/host/release.sh" approve v1.2.3 --yes; rc=$?
 check "no run is an error" mentions "no release run found for v1.2.3"
 world; printf '77\twaiting\n' > "${D}/run"; : > "${D}/envs"; pr '' bash "${ROOT}/host/release.sh" approve v1.2.3 --yes; rc=$?
 check "a run with nothing for you to approve is refused" mentions "nothing in run 77 is waiting for you"
-world; pr '' env CS_FETCHED=1 bash "${ROOT}/host/release.sh" tag v1.2.3 --yes
-check "release does not run from a downloaded copy either" test ! -s "${D}/log"
+world; pr '' env CS_FETCHED=1 CS_VERSION=abc123 CS_REF_SOURCE=pin bash "${ROOT}/host/release.sh" tag v1.2.3 --yes
+check "release says which version it runs from a download too" mentions "running claude-sandbox abc123, this project's pinned ref"
+check "...and tags" logged "refs/tags/v1.2.3"
 
 # --- several actions in one command -----------------------------------------------------
 line_of() { grep -n -F -- "$1" "${D}/log" | head -n 1 | cut -d: -f1; }
