@@ -33,7 +33,7 @@ Either way:
 - CI runs what the PR contains, including `plugin.sh`, the Dockerfile and the workflows, so keep registry and deploy secrets out of workflows that run on pull requests, and build and push images only from `main` or tags (this repo's `release.yml` runs on tags only, behind the `release` environment's approval);
 - give every workflow an explicit `permissions:` block, read-only for PR workflows (`permissions: contents: read`), so the repository's default `GITHUB_TOKEN` setting does not matter. This repo's workflows all declare one. As the repo admin you can also set the default to read-only (Settings, Actions, General, Workflow permissions), and check it with `gh api repos/OWNER/NAME/actions/permissions/workflow --jq .default_workflow_permissions`, which needs admin and cannot be run from the sandbox;
 - the sandbox token has no `workflow` scope, so a session cannot push workflow files;
-- pin actions by commit SHA where a workflow holds write permissions or secrets (Dependabot keeps the pins current), and read the diff of `plugin.sh`, the Dockerfile, `.github/` and `.claude/sandbox/` before merging.
+- pin every action by commit SHA, with the tag in a comment, so a moved tag cannot change what runs (all of this repo's are, and a test fails if one is not; Dependabot keeps the pins current), and read the diff of `plugin.sh`, the Dockerfile, `.github/` and `.claude/sandbox/` before merging.
 
 ## Network egress
 
