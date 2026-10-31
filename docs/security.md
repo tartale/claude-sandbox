@@ -13,18 +13,27 @@ The env file, `.envrc`, `.envrc-cs`, `.git/config`, `.git/hooks`, `.claude/sandb
 
 ## GitHub token
 
-`CS_GITHUB_TOKEN` (in `.env`) lets `git` and `gh` authenticate inside the container. Whatever the token can do, the agent can do, so `init.sh` walks you through a [fine-grained token](https://github.com/settings/personal-access-tokens) limited to the one repository, with Contents, Pull requests and Issues write access and no Administration or Workflows permission. It checks push access, no Administration and no other private repos; it cannot probe the Workflows permission, so confirm that is off on the token page.
+`CS_GITHUB_TOKEN` (in `.env`) lets `git` and `gh` authenticate inside the container. Whatever the token can do, the agent can do, so the token decides most of what the agent can damage.
 
-Where a fine-grained token cannot be used (for example a host that does not offer them), `init.sh` also accepts a classic token (`ghp_`). A classic token cannot be limited to one repository: it reaches every repo your account can, with the scopes you gave it, and the agent can do all of that. `init.sh` checks that it can read and push to this repo, lists its scopes, calls out `admin:*`, `delete_repo`, `workflow` and `delete:packages`, and only stores it after you confirm (default no). A bot's token has to be classic (see [A real merge gate](#a-real-merge-gate)), so there is nothing to choose: `init.sh` skips the warning and the question there, and still lists the scopes and flags powerful ones. Give it as few scopes as work (`repo`, and nothing for organizations or packages unless needed). `--yes` never takes a token.
+**With a bot account (recommended).** The sandbox is a separate GitHub account with the Write role on the repo, and its PRs need your approval ([A real merge gate](#a-real-merge-gate)). GitHub's fine-grained tokens cannot reach another user's repo, so the bot's token is a classic one (`ghp_`), and `init.sh` skips the classic-token warning there. A classic token cannot be limited to one repository: it reaches only what the bot account can access, so invite the bot only to repos the agent may touch, and give the token as few scopes as work (`public_repo` for a public repo, `repo` for a private one; never `workflow` or `admin:*`). `init.sh` checks that it can read and push to this repo, lists its scopes and flags the powerful ones (`admin:*`, `delete_repo`, `workflow`, `delete:packages`). One token can serve all your projects through a host variable (default `CS_BOT_TOKEN`); the agent can read it, so rotate it at once if it leaks.
+
+**Without a bot account.** The token acts as you. `init.sh` walks you through a [fine-grained token](https://github.com/settings/personal-access-tokens) limited to the one repository, with Contents, Pull requests and Issues write access and no Administration or Workflows permission. It checks push access, no Administration and no other private repos; it cannot probe the Workflows permission, so confirm that is off on the token page. A classic token is accepted where fine-grained ones are not offered, and only after a warning and a confirmation (default no). With this setup nothing stops the agent merging its own PRs (see below).
+
+`--yes` never takes a token.
 
 ## Merging and CI
 
-Nothing technical stops a session from merging its own pull request. The sandbox token has Contents and Pull requests write access and acts as your account, so GitHub will not let you approve what it opens, and the ruleset `init.sh` creates requires a PR but no approvals and no status checks. "Do not merge without approval" is a rule you give the agent, not one GitHub enforces. A real gate needs a second identity that does the merging or approving ([how to set one up](#a-real-merge-gate)) (a bot account with its own token, or a paid plan for reviews on a private repo). Short of that:
+**With a bot account**, the `main` ruleset `init.sh` sets requires one approval from someone other than the author, counted only after the last push (an earlier approval is dismissed by new commits), blocks force-pushes and deletion, and has no bypass. Required status checks (`shellcheck` and `test` in this repo) must pass too. The agent cannot approve its own PR, so you approve and merge each one.
+
+**Without a bot account**, nothing technical stops a session from merging its own pull request. The token acts as your account, so GitHub will not let you approve what it opens, and the ruleset `init.sh` creates requires a PR but no approvals. "Do not merge without approval" is then a rule you give the agent, not one GitHub enforces. A real gate needs a second identity ([how to set one up](#a-real-merge-gate)), or a paid plan for reviews on a private repo.
+
+Either way:
 
 - add required status checks (for example `test`) to the ruleset once CI exists, so red code cannot merge;
-- CI runs what the PR contains, including `plugin.sh`, the Dockerfile and the workflows, so keep registry and deploy secrets out of workflows that run on pull requests, and build and push images only from `main` or tags (this repo's `release.yml` runs on tags only);
-- give PR workflows read-only `GITHUB_TOKEN` permissions (`permissions: contents: read`); the sandbox token has no `workflow` scope, so a session cannot push workflow files, and you add this yourself;
-- read the diff of `plugin.sh`, the Dockerfile, `.github/` and `.claude/sandbox/` before merging.
+- CI runs what the PR contains, including `plugin.sh`, the Dockerfile and the workflows, so keep registry and deploy secrets out of workflows that run on pull requests, and build and push images only from `main` or tags (this repo's `release.yml` runs on tags only, behind the `release` environment's approval);
+- give every workflow an explicit `permissions:` block, read-only for PR workflows (`permissions: contents: read`), so the repository's default `GITHUB_TOKEN` setting does not matter. This repo's workflows all declare one. As the repo admin you can also set the default to read-only (Settings, Actions, General, Workflow permissions), and check it with `gh api repos/OWNER/NAME/actions/permissions/workflow --jq .default_workflow_permissions`, which needs admin and cannot be run from the sandbox;
+- the sandbox token has no `workflow` scope, so a session cannot push workflow files;
+- pin actions by commit SHA where a workflow holds write permissions or secrets (Dependabot keeps the pins current), and read the diff of `plugin.sh`, the Dockerfile, `.github/` and `.claude/sandbox/` before merging.
 
 ## Network egress
 
