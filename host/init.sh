@@ -536,7 +536,7 @@ add_setting() {   # NAME VALUE ACTIVE(1|0) COMMENT
     fi
     # The value is double-quoted, so a path with spaces survives and shellcheck (SC2086) is
     # satisfied; a caller that wants a variable expanded when the file is sourced passes it
-    # with its dollar sign ($HOME/...).
+    # with its dollar sign (${HOME}/...).
     local entry value
     value=$(printf '%s' "$2" | sed 's/[\\"`]/\\&/g')
     entry=$(printf '%s\n' "$4" | sed 's/^/# /')
@@ -563,7 +563,7 @@ add_setting CS_NPM_REGISTRY "" 0 "build.sh: npm registry URL for the image build
 add_setting CS_PIDS_LIMIT "" 0 "Maximum number of processes in the container (docker run --pids-limit). Unset means no limit."
 add_setting CS_REF "" 0 "Launcher version: a commit, tag or branch of tartale/claude-sandbox. Overrides the commit init.sh pinned in .claude/sandbox/ref.
 Set to latest to follow main with no pin; init.sh then writes none and removes an existing one."
-add_setting CS_USER_CONFIG_CHECKOUT "\$HOME/.claude-user" 0 "Your own checkout of the user config repo on the host, where sync.sh applies the sandbox's patch. The launcher does not read it."
+add_setting CS_USER_CONFIG_CHECKOUT "\${HOME}/.claude-user" 0 "Your own checkout of the user config repo on the host, where sync.sh applies the sandbox's patch. The launcher does not read it."
 cs_file_put "$CS_RC" ""   # sorts what is there, so a file edited by hand is put back in order
 if ! grep -qE '^[[:space:]]*source_env[[:space:]]+(\./)?\.envrc-cs[[:space:]]*$' .envrc 2>/dev/null; then
     [ -s .envrc ] && echo >> .envrc
@@ -701,7 +701,7 @@ if [ "$DO_TOKEN" = 1 ]; then
           { grep -vxF -e "$fine_comment" "$ENV_FILE" | grep -vxF -e "$classic_comment" | grep -vxF -e "$shared_comment" | grep -v '^CS_GITHUB_TOKEN=' > "$tmp"; } || true
           cat "$tmp" > "$ENV_FILE"; rm -f "$tmp"
           if [ -n "$SHARE_VAR" ]; then
-              cs_block_put "$ENV_FILE" "$(printf '%s\nCS_GITHUB_TOKEN=$%s' "$shared_comment" "$SHARE_VAR")"
+              cs_block_put "$ENV_FILE" "$(printf '%s\nCS_GITHUB_TOKEN=${%s}' "$shared_comment" "$SHARE_VAR")"
           else
               cs_block_put "$ENV_FILE" "$(printf '%s\nCS_GITHUB_TOKEN=%s' "$env_comment" "$TOKEN")"
           fi )
@@ -711,7 +711,7 @@ if [ "$DO_TOKEN" = 1 ]; then
             note "added $ENV_FILE to .git/info/exclude"
         fi
         if [ -n "$SHARE_VAR" ]; then
-            ok "CS_GITHUB_TOKEN=\$$SHARE_VAR saved to $ENV_FILE (a reference, not the token)"
+            ok "CS_GITHUB_TOKEN=\${$SHARE_VAR} saved to $ENV_FILE (a reference, not the token)"
             if [ "$TOKEN_FROM_ENV" != true ]; then
                 note "make the token available to every project: add this where your shell starts (for example"
                 note "your shell profile, or your global direnv), with the token you just created, then restart the shell:"
@@ -750,7 +750,7 @@ add_env_setting CS_USER_CONFIG_REPO "${REPO%%/*}/claude-user" "Private repo (own
 Optional: without it the session has no user scope. Set it together with CS_USER_CONFIG_TOKEN."
 add_env_setting CS_USER_CONFIG_TOKEN "" "Fine-grained token with Contents: Read-only on that one repo. It stays in the environment so claude-user-pull can fetch later changes; it cannot push.
 This file is readable inside the sandbox, so never give this token, or the project's, access to anything else.
-To share one token across projects, export it once on the host and write CS_USER_CONFIG_TOKEN=\$YOUR_VARIABLE here: \$VAR is expanded from the host environment."
+To share one token across projects, export it once on the host and write CS_USER_CONFIG_TOKEN=\${YOUR_VARIABLE} here: \${VAR} is expanded from the host environment."
 if grep -qxF "$CS_BEGIN" "$ENV_FILE" 2>/dev/null; then ( umask 077; cs_block_put "$ENV_FILE" "" ); fi   # sorts what is there
 chmod 600 "$ENV_FILE"
 if git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q "$ENV_FILE"; then
