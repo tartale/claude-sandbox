@@ -26,13 +26,13 @@ case "$*" in
     "api repos/o/r/git/ref/tags/"*) if [ -f "$GHD/tagexists" ]; then exit 0; else exit 1; fi ;;
     "api -X POST repos/o/r/git/refs "*) if [ -f "$GHD/tagfail" ]; then echo "Repository rule violations found" >&2; exit 1; fi ;;
     "pr list --repo o/r --json "*) cat_or prlist '#5  tartalebot  [REVIEW_REQUIRED]  Fix a thing' ;;
-    "pr view 5 --repo o/r --json number,title,"*) cat_or prrow $'5\tFix a thing\ttartalebot\tOPEN\tmain\tREVIEW_REQUIRED' ;;
-    "pr view 5 --repo o/r --json statusCheckRollup --jq "*'!= "COMPLETED"'*) cat_or pending 0 ;;
-    "pr view 5 --repo o/r --json statusCheckRollup --jq "*"IN("*) cat_or failing 0 ;;
-    "pr view 5 --repo o/r --json files --jq "*) printf 'host/init.sh\ntests/init.sh\n' ;;
+    "pr view "[56]" --repo o/r --json number,title,"*) cat_or prrow $'5\tFix a thing\ttartalebot\tOPEN\tmain\tREVIEW_REQUIRED' ;;
+    "pr view "[56]" --repo o/r --json statusCheckRollup --jq "*'!= "COMPLETED"'*) cat_or pending 0 ;;
+    "pr view "[56]" --repo o/r --json statusCheckRollup --jq "*"IN("*) cat_or failing 0 ;;
+    "pr view "[56]" --repo o/r --json files --jq "*) printf 'host/init.sh\ntests/init.sh\n' ;;
     "pr view 9 --repo o/r "*) echo "no pull request" >&2; exit 1 ;;
-    "pr review 5 --repo o/r --approve") ;;
-    "pr merge 5 --repo o/r --merge --delete-branch") ;;
+    "pr review "[56]" --repo o/r --approve") ;;
+    "pr merge "[56]" --repo o/r --merge --delete-branch") ;;
     "run list --repo o/r --workflow release.yml "*) [ -f "$GHD/run" ] && cat "$GHD/run" ;;
     "api repos/o/r/actions/runs/77/pending_deployments --jq "*) cat_or envs $'9\trelease' ;;
     "api -X POST repos/o/r/actions/runs/77/pending_deployments "*) ;;
@@ -163,6 +163,23 @@ world; printf '5\tMine\ttartale\tOPEN\tmain\tREVIEW_REQUIRED\n' > "${D}/prrow"; 
 check "the chain refuses your own pull request" mentions "GitHub does not count your own approval"
 world; printf '1' > "${D}/failing"; pr '' bash "${ROOT}/host/pr.sh" approve merge 5 --yes
 check "...and failing checks" not_logged "pr review"
+
+# --- several pull requests in one command -------------------------------------------------
+world; pr 'y\ny\n' bash "${ROOT}/host/pr.sh" approve merge 5 6; rc=$?
+check "several numbers each get their own summary" mentions "#6  Fix a thing"
+check "...and their own question" test "$(grep -c 'Approve #[56], then merge' <<<"${OUT}")" -eq 2
+check "...approving the first" logged "gh pr review 5 --repo o/r --approve"
+check "...merging the first" logged "gh pr merge 5 --repo o/r --merge --delete-branch"
+check "...approving the second" logged "gh pr review 6 --repo o/r --approve"
+check "...merging the second" logged "gh pr merge 6 --repo o/r --merge --delete-branch"
+check "...the first is done before the second starts" test "$(line_of 'pr merge 5')" -lt "$(line_of 'pr review 6')"
+world; pr 'n\n' bash "${ROOT}/host/pr.sh" approve merge 5 6; rc=$?
+check "declining the first stops the rest" test "$(grep -c 'pr review\|pr merge' "${D}/log")" -eq 0
+world; pr '' bash "${ROOT}/host/pr.sh" approve merge 5 9 --yes; rc=$?
+check "a number that fails stops after the ones before it" logged "gh pr merge 5 --repo o/r"
+check "...and says which one" mentions "no pull request #9"
+world; pr '' bash "${ROOT}/host/pr.sh" list 5; rc=$?
+check "list takes no numbers" test "${rc}" -eq 2
 
 world; printf '77\twaiting\n' > "${D}/run"; pr '' bash "${ROOT}/host/release.sh" tag approve v1.2.3 --yes; rc=$?
 check "tag approve creates the tag" logged "refs/tags/v1.2.3"
