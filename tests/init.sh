@@ -46,9 +46,10 @@ new_project() {
 
 # run_init INPUT [SCRIPT] -- run init.sh in the scratch project on a pty, feeding
 # INPUT (printf format) as the answers. Output lands in $OUT; init's exit status is returned.
+INIT_ENV=()   # extra NAME=value pairs for the environment of the next run_init
 run_init() {
     local rc
-    OUT=$(cd "${WORK}/proj" && printf "$1" | env -i PATH="${BIN}" HOME="${WORK}/home" NO_COLOR=1 \
+    OUT=$(cd "${WORK}/proj" && printf "$1" | env -i PATH="${BIN}" HOME="${WORK}/home" NO_COLOR=1 ${INIT_ENV[@]+"${INIT_ENV[@]}"} \
         script -qec "bash ${2:-${ROOT}/host/init.sh}" /dev/null 2>&1 | tr -d '\r')
     rc=${PIPESTATUS[0]}
     return "${rc}"
@@ -373,7 +374,7 @@ check "when GitHub stores a bypass, init says you can still tag" mentions "tarta
 check "...without the no-bypass note" lacks "nobody can create a v* tag"
 
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
-run_init 'y\ntartalebot\ny\nn\ny\n\ngithub_pat_x\n'; rc=$?
+run_init 'y\ntartalebot\ny\nn\ny\nn\n\ngithub_pat_x\n'; rc=$?
 check "a bot token is accepted when it belongs to the bot" test "${rc}" -eq 0
 check "...stored in the env file" contains "${WORK}/proj/.env" 'CS_GITHUB_TOKEN=github_pat_x'
 check "a collaborator with write access is not invited again" lacks "Invite it now"
@@ -383,15 +384,15 @@ check "...and is dismissed when new commits arrive" has_posted '"dismiss_stale_r
 check "the bot flow does not say the token can merge freely" lacks "can merge its own PRs"
 
 gh_world tartale '' '' ''; owner_curl tartalebot; new_project
-run_init 'y\ntartalebot\ny\nn\nn\ny\n\ngithub_pat_x\n'
+run_init 'y\ntartalebot\ny\nn\nn\ny\nn\n\ngithub_pat_x\n'
 check "a bot that is not a collaborator can be invited with Write" ghlogged "api -X PUT repos/o/Demo-App/collaborators/tartalebot -f permission=push"
 
 gh_world tartale '' '' 'admin'; owner_curl tartalebot; new_project
-run_init 'y\ntartalebot\ny\nn\nn\n\ngithub_pat_x\n'
+run_init 'y\ntartalebot\ny\nn\nn\nn\n\ngithub_pat_x\n'
 check "a bot with the admin role is warned about" mentions "give it the Write role instead"
 
 gh_world tartale '' '' 'write'; owner_curl tartale; new_project
-run_init 'y\ntartalebot\ny\nn\nn\n\ngithub_pat_x\n'; rc=$?
+run_init 'y\ntartalebot\ny\nn\nn\nn\n\ngithub_pat_x\n'; rc=$?
 check "a token on the wrong account is refused" test "${rc}" -ne 0
 check "...naming both accounts" mentions "belongs to tartale, not tartalebot"
 check "...and not stored" test ! -f "${WORK}/proj/.env" -o "$(grep -c 'CS_GITHUB_TOKEN=github_pat_x' "${WORK}/proj/.env" 2>/dev/null)" = 0
@@ -405,7 +406,7 @@ check "...so no token step runs on Enter" lacks "Token for o/Demo-App"
 
 gh_world tartale '' '' 'write'; owner_curl tartale; new_project
 printf 'CS_GITHUB_TOKEN=github_pat_x\n' > "${WORK}/proj/.env"
-run_init 'y\ntartalebot\n\nn\nn\n\ngithub_pat_x\n'
+run_init 'y\ntartalebot\n\nn\nn\nn\n\ngithub_pat_x\n'
 check "with a bot, a stored token on another account says so" mentions "(the token in .env belongs to tartale, not tartalebot)"
 check "...and Enter creates a new one" mentions "Token for o/Demo-App"
 
@@ -415,7 +416,7 @@ check "with a bot and no stored token the token question defaults to yes" mentio
 
 # A bot's token is a classic one: a fine-grained token cannot reach a repo the bot only collaborates on.
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
-run_init 'y\ntartalebot\ny\nn\ny\n\nghp_abc\n'; rc=$?
+run_init 'y\ntartalebot\ny\nn\ny\nn\n\nghp_abc\n'; rc=$?
 check "for a bot the token page is the classic one with the narrowest scope" mentions "settings/tokens/new?scopes=public_repo"
 check "...named after the repository, like the fine-grained one" mentions "description=cs-Demo-App"
 check "...explaining why a fine-grained token will not do" mentions "cannot reach a repo that tartalebot only collaborates on"
@@ -428,11 +429,11 @@ check "...and the main ruleset then requires an approval" has_posted '"required_
 check "the bot flow does not show the fine-grained page" test "$(grep -c personal-access-tokens/new <<<"${OUT}")" -eq 0
 
 gh_world tartale '' '' 'write'; owner_curl tartalebot 'public_repo, workflow'; new_project
-run_init 'y\ntartalebot\ny\nn\nn\n\nghp_abc\n'
+run_init 'y\ntartalebot\ny\nn\nn\nn\n\nghp_abc\n'
 check "a bot's token with a powerful scope is still called out" mentions "powerful scopes the agent could use: workflow"
 
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project; printf 'true' > "${GHD}/private"
-run_init 'y\ntartalebot\ny\nn\nn\n\nghp_abc\n'
+run_init 'y\ntartalebot\ny\nn\nn\nn\n\nghp_abc\n'
 check "for a private repo the scope is repo" mentions "settings/tokens/new?scopes=repo&"
 
 # Who may create v* tags: you, as a user on a personal repo (GitHub drops a role bypass there), the admin role for an organization.
@@ -458,6 +459,42 @@ check "if the update is dropped too, init warns" mentions "GitHub kept no bypass
 gh_world tartale '7\tmain\n8\trelease tags\n' '0\tfalse\tfalse\n' ''; new_project
 run_init 'n\nn\nn\ny\n'
 check "an existing tag ruleset that already has a bypass is left alone" mentions "ruleset 'release tags' already exists; left alone"
+
+# One bot token for every project: the env file holds a reference to a host variable.
+gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
+run_init 'y\ntartalebot\ny\nn\nn\ny\n\n\nghp_abc\n'; rc=$?
+check "the bot's token can be kept in a shared host variable" mentions "Keep the bot's token in a host variable"
+check "...the env file then holds a reference, not the token" contains "${WORK}/proj/.env" 'CS_GITHUB_TOKEN=$CS_BOT_TOKEN'
+check "...and never the token itself" lacks "ghp_abc saved"
+check "...nothing of the token is in the env file" test "$(grep -c ghp_abc "${WORK}/proj/.env")" -eq 0
+check "...with a comment saying it is shared" contains "${WORK}/proj/.env" "# The bot's GitHub token, shared by all projects"
+check "...the token page names the shared token after the bot" mentions "description=claude-sandbox-tartalebot"
+check "...and init says where to export it" mentions "export CS_BOT_TOKEN=<the token>"
+
+gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project; INIT_ENV=(CS_BOT_TOKEN=ghp_abc)
+run_init 'y\ntartalebot\ny\nn\nn\ny\n\n'; rc=$?; INIT_ENV=()
+check "a shared variable that is already set is used without a paste" mentions "using \$CS_BOT_TOKEN from the environment"
+check "...no token page, no paste prompt" lacks "Paste the token"
+check "...and the reference is stored" contains "${WORK}/proj/.env" 'CS_GITHUB_TOKEN=$CS_BOT_TOKEN'
+check "...without telling you to export it again" lacks "export CS_BOT_TOKEN=<the token>"
+
+gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project; INIT_ENV=(MY_BOT=ghp_abc)
+run_init 'y\ntartalebot\ny\nn\nn\ny\nMY_BOT\n'; INIT_ENV=()
+check "the variable's name can be chosen" contains "${WORK}/proj/.env" 'CS_GITHUB_TOKEN=$MY_BOT'
+gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
+run_init 'y\ntartalebot\ny\nn\nn\ny\nbad name\n'; rc=$?
+check "a name that is not a variable name is refused" mentions "not a usable variable name"
+
+gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
+printf '# bot\nCS_GITHUB_TOKEN=$CS_BOT_TOKEN\n' > "${WORK}/proj/.env"; INIT_ENV=(CS_BOT_TOKEN=ghp_abc)
+run_init '\n\n\nn\nn\n'; INIT_ENV=()
+check "a stored reference is resolved: the bot question defaults to yes for the token's owner" mentions "(the stored token belongs to tartalebot)"
+check "...and the token question to keeping it, naming the variable" mentions "(the token in \$CS_BOT_TOKEN is tartalebot's)"
+gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
+printf '# bot\nCS_GITHUB_TOKEN=$CS_BOT_TOKEN\n' > "${WORK}/proj/.env"
+run_init 'y\ntartalebot\nn\nn\nn\n'
+check "a reference whose variable is not set here says so" mentions "\$CS_BOT_TOKEN is not set in this shell"
+check "...in the bot step too" mentions "the host variable CS_BOT_TOKEN holds the token but is not set in this shell"
 
 # The bot question stands on its own: it is asked, and acted on, without creating a token.
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
