@@ -91,8 +91,6 @@ Optional, by feature:
 - `raw.githubusercontent.com` (`/release-notes`)
 - `code.claude.com` (documentation lookups)
 
-Telemetry goes to `http-intake.logs.us5.datadoghq.com` and `browser-intake-us5-datadoghq.com`. Leave them blocked and set `DISABLE_TELEMETRY=1` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` in `.env`.
-
 For `git` and `gh`: `github.com`, `api.github.com`, `codeload.github.com` and `objects.githubusercontent.com`. On GitHub Enterprise, allow your `CS_GITHUB_HOST` instead (plus `api.<tenant>.ghe.com` for an Enterprise Cloud tenant), and keep `github.com` and `raw.githubusercontent.com` for the launcher scripts the stubs fetch.
 
 ## The DNS channel
