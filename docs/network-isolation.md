@@ -1,83 +1,51 @@
 # Network isolation
 
-Part of [Security](security.md). By default the container can reach any host, including your LAN. The sandbox cannot change its own rules (no `NET_ADMIN`), so limits go on the host or the router. The launcher sets none of this up.
+Part of [Security](security.md). By default the container can reach any host, including your LAN. The sandbox cannot change its own rules (no `NET_ADMIN`), so limits go on the host or the router. The launcher sets none of this up; `cs network` does, once per host.
 
 Commands use `./cs`; away from a checkout, use the one-liner from the [README](../README.md#the-cs-command).
 
-| Goal | Steps | Strength |
+| Goal | Setup | Strength |
 |---|---|---|
-| Keep the container off your LAN | [1](#1-give-the-sandboxes-their-own-network) and [2](#2-block-the-lan-linux-host-or-nas) | Blocks the LAN; the internet stays open |
-| Allow only the hosts the session needs | [1](#1-give-the-sandboxes-their-own-network) and [3](#3-allow-only-named-hosts-at-the-router) | Strongest; needs a router that filters by hostname |
-| A quick filter, no network changes | [4](#4-a-filtering-resolver) | Weakest; connecting by IP address skips it |
+| Keep the container off your LAN | [`bridge`](#bridge-block-the-lan) | Blocks the LAN; the internet stays open |
+| Allow only the hosts the session needs | [`macvlan` or `ipvlan`](#macvlan-and-ipvlan-filter-at-the-router) plus router rules | Strongest; needs a router that filters by hostname |
+| A quick filter, no network changes | [a filtering resolver](#a-filtering-resolver) | Weakest; connecting by IP address skips it |
 
-[`cs network`](#automating-steps-1-to-3) automates steps 1 to 3 (tested against stubs, not a real firewall or router). A worked, verified router setup is in [UniFi](unifi.md).
+`cs network` detects the interface, subnet, gateway and resolver from the host's default route, shows what it found and asks before creating anything. Re-running adds only what is missing. Each `setup` prints the line to put in `.envrc-cs`. It has been tested against stubs, not a real firewall or router. A worked, verified router setup is in [UniFi](unifi.md).
 
-## 1. Give the sandboxes their own network
+## Bridge: block the LAN
 
-Rules can then name the sandboxes' address range:
+On a Linux host or NAS, as root:
 
 ```bash
-docker network create --subnet 172.30.0.0/24 claude-sandbox
+sudo ./cs network setup bridge
 ```
 
-Launch with this flag (put it in `.envrc-cs` to keep it):
+This creates a `claude-sandbox` docker network and `DOCKER-USER` rules that drop the sandbox's traffic to the private ranges (`10/8`, `172.16/12`, `192.168/16`) and allow DNS to your resolver, so the session reaches the internet but not your network. It also drops new connections from the sandbox to the host itself (ssh, web and admin ports), which a `DOCKER-USER` rule alone does not. The rules do not survive a reboot (the docker network does), so run `setup bridge` again after one. Host-side rules go in `INPUT`; a NAS firewall that rewrites `INPUT` can push them down the chain, so run `check` after changing its settings. Docker Desktop (macOS, Windows) has no host `iptables`; use the router.
+
+## macvlan and ipvlan: filter at the router
+
+Bridge traffic leaves the host under the host's address, so a router cannot tell it from the host's own. A `macvlan` or `ipvlan` network gives the sandbox its own LAN address. `--ip-range` is a slice your DHCP server does not hand out:
 
 ```bash
-export CS_DOCKER_FLAGS="--network claude-sandbox"
-```
-
-## 2. Block the LAN (Linux host or NAS)
-
-Rules in the `DOCKER-USER` chain run before Docker's own. Drop the private ranges and allow DNS to your resolver. Run as root, with `RESOLVER` set to your resolver's address (`192.168.1.1` is an example):
-
-```bash
-RESOLVER=192.168.1.1
-iptables -I DOCKER-USER -s 172.30.0.0/24 -d 10.0.0.0/8 -j DROP
-iptables -I DOCKER-USER -s 172.30.0.0/24 -d 172.16.0.0/12 -j DROP
-iptables -I DOCKER-USER -s 172.30.0.0/24 -d 192.168.0.0/16 -j DROP
-iptables -I DOCKER-USER -s 172.30.0.0/24 -d "$RESOLVER" -p udp --dport 53 -j ACCEPT
-```
-
-The DNS rule goes in last, so it is evaluated first. Docker Desktop (macOS, Windows) has no host `iptables`; use the router (step 3).
-
-## 3. Allow only named hosts, at the router
-
-Bridge traffic leaves the host under the host's address, so a router cannot tell it from the host's own. Give the sandbox its own LAN address with a `macvlan` or `ipvlan` network instead (subnet, gateway and parent interface are examples; use an address range your router does not hand out):
-
-```bash
-docker network create -d macvlan --subnet 192.168.1.0/24 --gateway 192.168.1.1 -o parent=eth0 claude-sandbox
+./cs network setup macvlan --ip-range 192.168.1.192/28
+./cs network setup ipvlan --ip-range 192.168.1.192/28   # macvlan does not work over Wi-Fi
 ```
 
 A router or firewall that filters by hostname (OPNsense, pfSense or OpenWrt aliases; Pi-hole or AdGuard Home per-client filtering) can then allow [the hosts below](#hosts-the-sandbox-needs) and block the rest. A macvlan container and its host cannot reach each other without extra setup.
 
 On the LAN's own subnet this does not isolate the sandbox from other devices: that traffic goes through the switch, not the router. Give the sandbox its own VLAN (see [UniFi](unifi.md)).
 
-## 4. A filtering resolver
+## A filtering resolver
 
-Point the container at a resolver that blocks what you do not want:
+Point the container at a resolver that blocks what you do not want, in `.envrc-cs`:
 
 ```bash
 export CS_DOCKER_FLAGS="--dns 192.168.1.1"
 ```
 
-The cheapest step and the weakest.
+The cheapest setup and the weakest.
 
-## Automating steps 1 to 3
-
-`cs network` runs once per host. It detects the interface, subnet, gateway and resolver from the default route, shows what it found and asks before creating anything. Re-running adds only what is missing. Each setup prints the `CS_DOCKER_FLAGS` line for `.envrc-cs`.
-
-Steps 1 and 2 on a Linux host or NAS (root). It also drops new connections from the sandbox to the host itself (ssh, web and admin ports), which a `DOCKER-USER` rule alone does not:
-
-```bash
-sudo ./cs network setup bridge
-```
-
-Step 3, a network with its own LAN addresses for a router to filter. `--ip-range` is a slice your DHCP server does not hand out:
-
-```bash
-./cs network setup macvlan --ip-range 192.168.1.192/28
-./cs network setup ipvlan --ip-range 192.168.1.192/28   # macvlan does not work over Wi-Fi
-```
+## Checking and removing
 
 Check from a throwaway container that a LAN host and the host's ssh and web ports are blocked (bridge only; with macvlan or ipvlan the router decides), DNS works and the internet is reachable. Pass your router's address, or none to test the default gateway:
 
@@ -92,7 +60,7 @@ sudo ./cs network status
 sudo ./cs network remove
 ```
 
-An existing network under that name must match what you ask for (type, subnet, range), or `setup` stops and tells you to `remove` it first; that is also how you switch types. `--name`, `--subnet`, `--gateway`, `--parent`, `--resolver` and `--mode l2|l3` override detection; `--yes` skips the confirmation. Bridge rules do not survive a reboot (the docker network does), so run `setup bridge` again after one. Host-side rules go in `INPUT`; a NAS firewall that rewrites `INPUT` can push them down the chain, so run `check` after changing its settings. Docker Desktop cannot do any of this.
+An existing network under that name must match what you ask for (type, subnet, range), or `setup` stops and tells you to `remove` it first; that is also how you switch types. `--name`, `--subnet`, `--gateway`, `--parent`, `--resolver` and `--mode l2|l3` override detection; `--yes` skips the confirmation.
 
 ## Hosts the sandbox needs
 
