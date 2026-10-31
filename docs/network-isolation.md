@@ -20,7 +20,17 @@ On a Linux host or NAS, as root:
 sudo ./cs network setup bridge
 ```
 
-This creates a `claude-sandbox` docker network and `DOCKER-USER` rules that drop the sandbox's traffic to the private ranges (`10/8`, `172.16/12`, `192.168/16`) and allow DNS to your resolver, so the session reaches the internet but not your network. It also drops new connections from the sandbox to the host itself (ssh, web and admin ports), which a `DOCKER-USER` rule alone does not. The rules do not survive a reboot (the docker network does), so run `setup bridge` again after one. Host-side rules go in `INPUT`; a NAS firewall that rewrites `INPUT` can push them down the chain, so run `check` after changing its settings. Docker Desktop (macOS, Windows) has no host `iptables`; use the router.
+It sets up:
+
+- a `claude-sandbox` docker network for the sandboxes;
+- `DOCKER-USER` rules that drop the sandbox's traffic to the private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) and allow DNS to your resolver, so the session reaches the internet but not your network;
+- `INPUT` rules that drop new connections from the sandbox to the host itself (ssh, web and admin ports), which the `DOCKER-USER` rules do not cover.
+
+Limits:
+
+- The rules do not survive a reboot (the docker network does). Run `setup bridge` again after one.
+- A NAS firewall that rewrites `INPUT` can push the host rules down the chain. Run `./cs network check` after changing its settings.
+- Docker Desktop (macOS, Windows) has no host `iptables`. Use the router instead.
 
 ## macvlan and ipvlan: filter at the router
 
