@@ -167,7 +167,7 @@ names() { grep -oE '^(# )?(export )?[A-Z][A-Z0-9_]*=' "$1" | sed -E 's/^(# )?(ex
 if command -v shellcheck >/dev/null; then
     check ".envrc-cs and .envrc have no unquoted expansions" shellcheck -s bash --severity=info --include=SC2086 "${RC}" "${WORK}/proj/.envrc"
 fi
-check "values are double-quoted, including the \$HOME default" contains "${RC}" '# export CS_USER_CONFIG_CHECKOUT="$HOME/.claude-user"'
+check "values are double-quoted, including the \${HOME} default" contains "${RC}" '# export CS_USER_CONFIG_CHECKOUT="${HOME}/.claude-user"'
 check "the settings go in .envrc-cs" contains "${RC}" 'export CS_IMAGE_REPO="ghcr.io/tartale/claude-sandbox"'
 check ".envrc-cs comments every variable directly above it" test "$(awk '/^(# )?(export )?[A-Z_]+=/ && prev ~ /^# [A-Za-z-]/ { n++ } { prev = $0 } END { print n + 0 }' "${RC}")" -eq "$(grep -cE '^(# )?(export )?[A-Z_]+=' "${RC}")"
 # The name is CS_LANGUAGE_VERSIONS everywhere; the bare name is not read or written anywhere.
@@ -464,7 +464,7 @@ check "an existing tag ruleset that already has a bypass is left alone" mentions
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
 run_init 'y\ntartalebot\ny\nn\nn\ny\n\n\nghp_abc\n'; rc=$?
 check "the bot's token can be kept in a shared host variable" mentions "Keep the bot's token in a host variable"
-check "...the env file then holds a reference, not the token" contains "${WORK}/proj/.env" 'CS_GITHUB_TOKEN=$CS_BOT_TOKEN'
+check "...the env file then holds a reference, not the token" contains "${WORK}/proj/.env" 'CS_GITHUB_TOKEN=${CS_BOT_TOKEN}'
 check "...and never the token itself" lacks "ghp_abc saved"
 check "...nothing of the token is in the env file" test "$(grep -c ghp_abc "${WORK}/proj/.env")" -eq 0
 check "...with a comment saying it is shared" contains "${WORK}/proj/.env" "# The bot's GitHub token, shared by all projects"
@@ -475,12 +475,12 @@ gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project; INIT_ENV=(CS
 run_init 'y\ntartalebot\ny\nn\nn\ny\n\n'; rc=$?; INIT_ENV=()
 check "a shared variable that is already set is used without a paste" mentions "using \$CS_BOT_TOKEN from the environment"
 check "...no token page, no paste prompt" lacks "Paste the token"
-check "...and the reference is stored" contains "${WORK}/proj/.env" 'CS_GITHUB_TOKEN=$CS_BOT_TOKEN'
+check "...and the reference is stored" contains "${WORK}/proj/.env" 'CS_GITHUB_TOKEN=${CS_BOT_TOKEN}'
 check "...without telling you to export it again" lacks "export CS_BOT_TOKEN=<the token>"
 
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project; INIT_ENV=(MY_BOT=ghp_abc)
 run_init 'y\ntartalebot\ny\nn\nn\ny\nMY_BOT\n'; INIT_ENV=()
-check "the variable's name can be chosen" contains "${WORK}/proj/.env" 'CS_GITHUB_TOKEN=$MY_BOT'
+check "the variable's name can be chosen" contains "${WORK}/proj/.env" 'CS_GITHUB_TOKEN=${MY_BOT}'
 gh_world tartale '' '' 'write'; owner_curl tartalebot; new_project
 run_init 'y\ntartalebot\ny\nn\nn\ny\nbad name\n'; rc=$?
 check "a name that is not a variable name is refused" mentions "not a usable variable name"
