@@ -91,11 +91,13 @@ usage_network() { echo "Usage: cs network setup bridge|macvlan|ipvlan [OPTIONS] 
 
   Set up the sandbox network, once per host. See docs/security.md. Run cs network without
   arguments for every option."; }
-usage_pr() { echo "Usage: cs pr list | approve [merge] N [--yes] | merge N [--yes]
+usage_pr() { echo "Usage: cs pr list | approve [merge] N... [--yes] | merge N... [--yes]
 
   As the repo owner, with gh signed in as the admin (not the sandbox's bot): list the open pull
   requests, approve one (after its author, checks and files are shown), or merge an approved one.
   Actions run in the order given: cs pr approve merge 5 approves #5, then merges it, on one question.
+  Several numbers (cs pr approve merge 5 6) go one after another, each with its own summary and question;
+  the first one that cannot go stops the rest.
   --yes skips the question. --repo OWNER/NAME names the repository (default: the current directory's).
   They act with your admin login, so from the one-liner they run the project's pinned ref
   (.claude/sandbox/ref, written by init.sh) when there is one, and say which version they run.
