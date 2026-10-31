@@ -89,7 +89,7 @@ usage_sync() { echo "Usage: cs sync [apply | show | status]
   checkout and push it (default), page through it, or say whether one is waiting."; }
 usage_network() { echo "Usage: cs network setup bridge|macvlan|ipvlan [OPTIONS] | check [LAN_HOST] | status | remove
 
-  Set up the sandbox network, once per host. See docs/security.md. Run cs network without
+  Set up the sandbox network, once per host. See docs/network-isolation.md. Run cs network without
   arguments for every option."; }
 usage_pr() { echo "Usage: cs pr list | approve [merge] N... [--yes] | merge N... [--yes]
 

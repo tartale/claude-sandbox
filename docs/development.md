@@ -10,12 +10,19 @@ plugins/            language and tool plugins
 tests/              bash tests
 ```
 
-Run the bash tests in `tests/` with:
+Run the tests in `tests/` with `./cs test`. CI runs them on every pull request. Each file covers one area:
 
-```bash
-./cs test
-```
+| File | Covers |
+|---|---|
+| `cs.sh` | the command's help, dispatch and download |
+| `host.sh` | the scripts behind `cs build` and `cs run` |
+| `launcher.sh` | the launcher, with a stubbed `docker` (no daemon needed); the `.env` expansion tests need `envsubst` and are skipped without it |
+| `init.sh` | `host/init.sh` in a scratch git project on a pty with no network: the stubs it generates and how it treats files you edited |
+| `build-image.sh` | build arguments and secrets, with stubbed `docker` and `npm`; workflow actions pinned by SHA |
+| `network.sh` | `host/network.sh` against stubbed `docker`, `iptables` and `ip`, a directory standing in for the firewall chain |
+| `owner.sh` | `cs pr` and `cs release`, against a stubbed `gh` |
+| `github-config.sh` | the git config and `gh` environment the container sets up for each GitHub host |
+| `user-pull.sh` | `claude-user-pull` and `claude-user-sync`, against a local bare repo |
+| `shellcheck.sh` | every script, and what `init.sh` writes, for unquoted expansions (SC2086), which CI's warning-level job does not report |
 
-`launcher.sh` exercises the launcher with a stubbed `docker` (no daemon needed). `init.sh` runs `host/init.sh` in a scratch git project on a pty, with no network, to check the stubs it generates and how it treats files you edited. `cs.sh` checks the command's help, dispatch and download. `host.sh` covers the scripts behind `cs build` and `cs run`. `build-image.sh` checks the build arguments and secrets with stubbed `docker` and `npm`. `network.sh` runs `host/network.sh` against stubbed `docker`, `iptables` and `ip`, with a directory standing in for the firewall chain. `owner.sh` covers `cs pr` and `cs release` against a stubbed `gh`. `shellcheck.sh` checks every script (and what `init.sh` writes) for unquoted expansions, SC2086, which CI's warning-level job does not report. `github-config.sh` covers the git config and `gh` environment the container sets up for each GitHub host. `user-pull.sh` covers `claude-user-pull` and `claude-user-sync` against a local bare repo. The expansion tests need `envsubst` and are skipped without it. CI runs them on every pull request.
-
-The other development commands: `cs image` builds the base image for this machine, `cs push` and `cs all` build and push it (and every language variant) for amd64 and arm64, `cs tags` adds version tags, `cs clean` removes the local image. Run `cs --help` for the list.
+Other commands: `cs image` builds the base image for this machine; `cs push` and `cs all` build and push it, and every language variant, for amd64 and arm64; `cs tags` adds version tags; `cs clean` removes the local image. `cs --help` lists them all.
