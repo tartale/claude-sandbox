@@ -18,12 +18,26 @@ if [ -z "${CS_ROOT:-}" ]; then
     else
         # Fetched with curl: download the tree and run its copy of cs, so every command sees
         # the files next to it. A child process (not exec) so the download is removed after.
-        ref="${CS_REF:-main}"; [ "$ref" != latest ] || ref=main
+        # Which version: CS_REF, else (for the owner commands, which act with your admin login) the
+        # project's pinned ref, else main. The pin is the commit you chose; only a PR you approve moves it.
+        ref="${CS_REF:-}"; ref_source="env"
+        if [ -z "$ref" ]; then
+            ref=main; ref_source="default"
+            case "${1:-}" in
+                pr|release)
+                    project=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+                    pin=$(cat "$project/.claude/sandbox/ref" 2>/dev/null || true)
+                    if [[ "$pin" =~ ^[0-9a-f]{40}$ ]]; then ref=$pin; ref_source="pin"; fi ;;
+            esac
+        fi
+        [ "$ref" != latest ] || ref=main
         tree=$(mktemp -d)
         trap 'rm -rf "$tree"' EXIT
-        curl -fsSL "https://codeload.github.com/${CS_REPO}/tar.gz/${ref}" | tar -xz --strip-components=1 -C "$tree"
+        curl -fsSL "https://codeload.github.com/${CS_REPO}/tar.gz/${ref}" | tar -xz -C "$tree"
+        # GitHub's tarball has one directory, named after the repository and the commit.
+        root=$(echo "$tree"/*/); root=${root%/}
         rc=0
-        CS_FETCHED=1 CS_ROOT="$tree" bash "$tree/cs" "$@" || rc=$?
+        CS_FETCHED=1 CS_VERSION="${root##*-}" CS_REF_USED="$ref" CS_REF_SOURCE="$ref_source" CS_ROOT="$root" bash "$root/cs" "$@" || rc=$?
         exit "$rc"
     fi
 fi
@@ -83,13 +97,16 @@ usage_pr() { echo "Usage: cs pr list | approve [merge] N [--yes] | merge N [--ye
   requests, approve one (after its author, checks and files are shown), or merge an approved one.
   Actions run in the order given: cs pr approve merge 5 approves #5, then merges it, on one question.
   --yes skips the question. --repo OWNER/NAME names the repository (default: the current directory's).
-  Run from a checkout (./cs): these act with your admin login, so they do not run from a download."; }
+  They act with your admin login, so from the one-liner they run the project's pinned ref
+  (.claude/sandbox/ref, written by init.sh) when there is one, and say which version they run.
+  CS_REF=<commit> chooses another."; }
 usage_release() { echo "Usage: cs release tag [approve] vX.Y.Z [--yes] | approve [vX.Y.Z] [--yes]
 
   As the repo owner: tag the default branch's latest commit as a release (the tag ruleset lets only you
   do it), then approve the release run that waits for you. cs release tag approve v1.2.3 does both,
   on one question, waiting for the run to start. --yes skips the question. --repo OWNER/NAME
-  names the repository. Run from a checkout (./cs), not a download."; }
+  names the repository. From the one-liner it runs the project's pinned ref when there is one
+  (see cs pr --help), and says which version."; }
 usage_test() { echo "Usage: cs test
 
   Run every script in tests/ (needs a checkout)."; }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # cs release tag [approve] vX.Y.Z | approve [vX.Y.Z]: tag a release and approve its publish, as the
-# repo owner. Run from a checkout, with gh signed in as the admin (not the sandbox's bot account).
+# repo owner. Run from a checkout or the one-liner, with gh signed in as the admin (not the sandbox's bot account).
 #   tag      creates the tag on the default branch's latest commit (the 'release tags' ruleset lets
 #            only you do this). The tag starts the release run, which then waits for your approval.
 #   approve  approves that run's pending deployment (the 'release' environment).

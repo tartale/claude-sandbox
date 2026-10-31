@@ -16,7 +16,7 @@ for f in /usr/bin/* /bin/*; do
 done
 cp "${ROOT}/cs" "${TREE}/cs"
 for c in init build run start restart sync network pr release tag-images; do
-    printf '#!/bin/bash\necho "%s $* root=$CS_ROOT fetched=${CS_FETCHED:-}" >> "%s"\n' "${c}" "${LOG}" > "${TREE}/host/${c}.sh"
+    printf '#!/bin/bash\necho "%s $* root=$CS_ROOT fetched=${CS_FETCHED:-} version=${CS_VERSION:-} src=${CS_REF_SOURCE:-}" >> "%s"\n' "${c}" "${LOG}" > "${TREE}/host/${c}.sh"
 done
 printf '#!/bin/bash\necho "stage $*" >> "%s"\n' "${LOG}" > "${TREE}/plugins/stage.sh"
 printf '#!/bin/bash\necho "test-one" >> "%s"\n' "${LOG}" > "${TREE}/tests/one.sh"
@@ -43,6 +43,7 @@ lacks() { ! mentions "$1"; }
 logged() { grep -qF -- "$1" "${LOG}"; }
 not_logged() { ! logged "$1"; }
 cs() { : > "${LOG}"; OUT=$(cd "${WORK}" && env -i PATH="${BIN}" HOME="${WORK}" "$@" 2>&1); }
+cs_in() { local dir=$1; shift; : > "${LOG}"; OUT=$(cd "${dir}" && env -i PATH="${BIN}" HOME="${WORK}" "$@" 2>&1); }   # like cs, from a directory
 
 # --- help ---------------------------------------------------------------------
 cs "${TREE}/cs"; rc=$?
@@ -77,7 +78,7 @@ check "cs test runs every script in tests/" test "$(grep -c '^test-' "${LOG}")" 
 # --- fetched with curl: no checkout around ------------------------------------------
 cs bash -c "$(cat "${ROOT}/cs")" cs run --continue
 check "from curl, cs downloads the tree and runs the command from it" logged "run --continue root="
-check "...marking it as a download, so the owner commands refuse" logged "fetched=1"
+check "...marking it as a download, with the commit it fetched" logged "fetched=1 version=abc123 src=default"
 check "...from the main version by default" logged "curl https://codeload.github.com/tartale/claude-sandbox/tar.gz/main"
 root=$(sed -n 's/.*run --continue root=//p' "${LOG}")
 check "...and removes the download afterwards" test ! -e "${root}"
@@ -92,6 +93,29 @@ check "a checkout never downloads" not_logged "curl "
 check "...and is not marked as a download" not_logged "fetched=1"
 cs "${TREE}/cs" --help
 check "cs --help has an Owner commands group" mentions "Owner commands:"
+
+# --- the owner commands follow the project's pinned ref ---------------------------------
+PIN=0123456789abcdef0123456789abcdef01234567
+mkdir -p "${WORK}/proj/.claude/sandbox" "${WORK}/proj/sub/dir"; git -C "${WORK}/proj" init -q
+printf '%s\n' "${PIN}" > "${WORK}/proj/.claude/sandbox/ref"
+cs_in "${WORK}/proj" bash -c "$(cat "${ROOT}/cs")" cs pr list
+check "cs pr from a project with a pin downloads the pinned commit" logged "tar.gz/${PIN}"
+check "...and reports it as the project's pin" logged "src=pin"
+cs_in "${WORK}/proj/sub/dir" bash -c "$(cat "${ROOT}/cs")" cs release tag v1.0.0
+check "...also from a subdirectory of the project" logged "tar.gz/${PIN}"
+cs_in "${WORK}/proj" bash -c "$(cat "${ROOT}/cs")" cs run
+check "the other commands ignore the pin, so init can move it" logged "tar.gz/main"
+cs_in "${WORK}/proj" bash -c "$(cat "${ROOT}/cs")" cs init
+check "...cs init too" logged "tar.gz/main"
+cs_in "${WORK}/proj" env CS_REF=v9.9.9 bash -c "$(cat "${ROOT}/cs")" cs pr list
+check "CS_REF beats the pin" logged "tar.gz/v9.9.9"
+check "...and is reported as chosen" logged "src=env"
+printf 'not-a-commit\n' > "${WORK}/proj/.claude/sandbox/ref"
+cs_in "${WORK}/proj" bash -c "$(cat "${ROOT}/cs")" cs pr list
+check "a ref file that is not a full commit is ignored" logged "tar.gz/main"
+rm "${WORK}/proj/.claude/sandbox/ref"
+cs_in "${WORK}/proj" bash -c "$(cat "${ROOT}/cs")" cs pr list
+check "a project without a pin gets main, reported as not pinned" logged "src=default"
 
 # --- development commands ------------------------------------------------------------
 cs "${TREE}/cs" clean

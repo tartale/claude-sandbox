@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # cs pr list | approve [merge] N | merge N: review and merge pull requests as the repo owner. Run from a
-# checkout, with gh signed in as the admin (not the sandbox's bot account).
+# checkout or the one-liner, with gh signed in as the admin (not the sandbox's bot account).
 set -euo pipefail
 
 HOST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
